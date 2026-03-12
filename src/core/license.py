@@ -119,13 +119,12 @@ def verificar_licenca_online(machine_id: str) -> Optional[dict]:
                 pass
 
         if not all([supabase_url, supabase_key, supabase_table]):
-            print("[DEBUG] Configurações do Supabase não encontradas no version.py")
             return None
 
         mid_clean = machine_id.strip().upper()
 
         # Consulta: Buscar licença pelo Machine ID
-        query_params = urllib.parse.urlencode({"machine_id": f"eq.{mid_clean}", "select": "*"})
+        query_params = urllib.parse.urlencode({"machine_id": f"eq.{mid_clean}", "select": "*" })
         url = f"{supabase_url}/rest/v1/{supabase_table}?{query_params}"
 
         headers = {
@@ -135,7 +134,6 @@ def verificar_licenca_online(machine_id: str) -> Optional[dict]:
             'Prefer': 'return=representation'
         }
 
-        print(f"[DEBUG] Tentando conexão Supabase: {url}")
         req = urllib.request.Request(url, headers=headers, method="GET")
 
         with urllib.request.urlopen(req, timeout=15) as response:
@@ -165,11 +163,10 @@ def verificar_licenca_online(machine_id: str) -> Optional[dict]:
                         date_clean = str(exp_str).replace("T", " ").split(" ")[0]
                         expiry_date = datetime.strptime(date_clean, "%Y-%m-%d").date()
                         display_exp = expiry_date.strftime("%d/%m/%Y")
-                    except Exception as e:
-                        print(f"[DEBUG] Erro ao parsear data {exp_str}: {e}")
+                    except Exception:
+                        pass
 
                 if expiry_date and date.today() > expiry_date:
-                    print(f"[DEBUG] Licença ONLINE expirou em {expiry_date}")
                     raise LicenseError("Sua licença expirou. Entre em contato para renovar.")
 
                 # Atualizar Last Login
@@ -181,15 +178,14 @@ def verificar_licenca_online(machine_id: str) -> Optional[dict]:
                     )
                     with urllib.request.urlopen(update_req, timeout=5) as u_res:
                         if u_res.getcode() in (200, 204):
-                            print(f"[DEBUG] Last login atualizado para {mid_clean}")
-                except Exception as ex:
-                    print(f"[DEBUG] Erro ao atualizar last login (não crítico): {ex}")
+                            pass
+                except Exception:
+                    pass
 
                 dias_restantes = 8888
                 if expiry_date:
                     dias_restantes = (expiry_date - date.today()).days
 
-                print(f"[DEBUG] Licença ONLINE validada com sucesso para {data.get('name')}")
                 return {
                     "valido": True,
                     "expiry": display_exp,
@@ -199,13 +195,11 @@ def verificar_licenca_online(machine_id: str) -> Optional[dict]:
                     "metodo": "online"
                 }
             else:
-                print(f"[DEBUG] Supabase retornou código HTTP {response.getcode()}")
+                pass
     except LicenseError:
         raise
-    except Exception as e:
-        print(f"[DEBUG] Erro crítico na validação Supabase: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        pass
     return None
 
 
