@@ -52,11 +52,28 @@ if errorlevel 1 (
 )
 
 echo.
+echo [3/3] Criando pacote ZIP para auto-update...
+timeout /t 2 /nobreak >nul
+set ZIP_BASE_NAME=RossPDFEditor
+if exist "installer\%ZIP_BASE_NAME%.zip" del "installer\%ZIP_BASE_NAME%.zip"
+python -c "import shutil; shutil.make_archive('installer/%ZIP_BASE_NAME%', 'zip', 'dist/RossPDFEditor')"
+if errorlevel 1 (
+    echo ERRO: falha ao gerar o arquivo ZIP.
+    pause & exit /b 1
+)
+echo     OK - installer\%ZIP_BASE_NAME%.zip (v%APP_VERSION%)
+
+echo.
 echo ============================================================
 echo   BUILD COMPLETO!
 echo ============================================================
 echo.
 echo  Instalador:  installer\RossPDFEditor_Setup_v%APP_VERSION%.exe
+echo  Auto-update: installer\RossPDFEditor.zip
 echo.
+echo  IMPORTANTE: 
+echo  1. Envie o .exe para novos clientes.
+echo  2. Carregue o .zip no GitHub Releases como 'RossPDFEditor.zip'
+echo     para que os clientes atuais recebam a v%APP_VERSION% automaticamente.
 echo ============================================================
 pause
