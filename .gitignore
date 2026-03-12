@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+
+# Build e Dist
+build/
+dist/
+*.spec
+
+# IDEs
+.vscode/
+.idea/
+
+# PDF Editor Temporary Files
+*.tmp
+*.pdf.tmp
+
+# Installer metadata
+installer_meta/
+RossPDFEditor_setup.exe
+ross_pdf_editor_setup.exe
