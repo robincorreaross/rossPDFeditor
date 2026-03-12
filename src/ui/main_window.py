@@ -8,8 +8,9 @@ Interface clean e funcional com:
 - Suporte a seleção múltipla, exclusão, inserção e recorte
 """
 
-import sys
 import os
+import sys
+import threading
 from pathlib import Path
 from PySide6.QtCore import (
     Qt, QSize, QMimeData, QTimer, QPropertyAnimation, QEasingCurve,
@@ -30,6 +31,9 @@ from src.engine.pdf_engine import PDFEngine
 from src.ui.page_thumbnail import PageThumbnail
 from src.ui.crop_dialog import CropDialog
 from src.ui.help_screen import HelpScreen
+from src.core.updater import verificar_atualizacao, baixar_e_instalar, abrir_download
+from src.core.license import get_machine_id, validar_licenca
+from version import APP_VERSION, DOWNLOAD_URL
 
 
 class DropZone(QFrame):
@@ -145,6 +149,10 @@ class MainWindow(QMainWindow):
         self._setup_central()
         self._setup_statusbar()
         self._show_drop_zone()
+
+        # Verificação de atualização e licença após 1-2 segundos
+        QTimer.singleShot(1000, self._iniciar_verificacao_update)
+        QTimer.singleShot(2000, self._verificar_expiracao_licenca)
 
     # ══════════════════════════════════════════════════════════
     # Setup
@@ -265,6 +273,24 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.pages_container)
         self.scroll_area.hide()
 
+        # Banner de atualização (oculto inicialmente)
+        self._update_banner = QFrame()
+        self._update_banner.setFixedHeight(42)
+        self._update_banner.setStyleSheet("background-color: #0D2B0D; border: none;")
+        self._update_banner_layout = QHBoxLayout(self._update_banner)
+        self._update_banner_layout.setContentsMargins(16, 0, 16, 0)
+        self._update_banner.hide()
+
+        # Banner de licença (oculto inicialmente)
+        self._license_banner = QFrame()
+        self._license_banner.setFixedHeight(42)
+        self._license_banner.setStyleSheet("background-color: #3E2723; border: none;") # Marrom escuro / Âmbar
+        self._license_banner_layout = QHBoxLayout(self._license_banner)
+        self._license_banner_layout.setContentsMargins(16, 0, 16, 0)
+        self._license_banner.hide()
+
+        self.main_layout.addWidget(self._update_banner)
+        self.main_layout.addWidget(self._license_banner)
         self.main_layout.addWidget(self.scroll_area)
 
     def _setup_statusbar(self):
@@ -281,16 +307,247 @@ class MainWindow(QMainWindow):
         dialog = HelpScreen(self)
         dialog.exec()
 
+    # ── Sistema de update ────────────────────────────────────────────────────────
+
+    def _iniciar_verificacao_update(self):
+        """Dispara a verificação de update em background."""
+        try:
+            verificar_atualizacao(
+                on_update_available=lambda v, c, m, z: QTimer.singleShot(
+                    0, lambda: self._mostrar_banner_update(v, c, m, z)
+                )
+            )
+        except Exception as e:
+            print(f"[DEBUG] Falha na verificação de update: {e}")
+
+    def _mostrar_banner_update(self, nova_versao: str, changelog: list[str], obrigatoria: bool, zip_url: str = ""):
+        """Exibe o banner de notificação de update no topo do app."""
+        self._update_zip_url = zip_url
+        
+        # Limpar layout anterior
+        while self._update_banner_layout.count():
+            item = self._update_banner_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._update_banner.show()
+
+        emoji = "🚨" if obrigatoria else "🟢"
+        tipo = "OBRIGATÓRIA" if obrigatoria else "disponível"
+        desc = changelog[0] if changelog else ""
+        texto = f"{emoji}  Atualização {tipo}: versão {nova_versao}   —   {desc}"
+
+        lbl = QLabel(texto)
+        lbl.setStyleSheet(f"color: {'#FFCDD2' if obrigatoria else '#A5D6A7'}; font-weight: bold; font-size: 13px;")
+        self._update_banner_layout.addWidget(lbl)
+        
+        self._update_banner_layout.addStretch()
+
+        btn_download = QPushButton("⬇️  Baixar agora")
+        btn_download.setFixedSize(130, 28)
+        btn_download.setCursor(Qt.PointingHandCursor)
+        btn_download.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {'#C62828' if obrigatoria else '#2E7D32'};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background-color: {'#D32F2F' if obrigatoria else '#388E3C'};
+            }}
+        """)
+        btn_download.clicked.connect(self._abrir_download)
+        self._update_banner_layout.addWidget(btn_download)
+
+        if not obrigatoria:
+            btn_close = QPushButton("✕")
+            btn_close.setFixedSize(28, 28)
+            btn_close.setCursor(Qt.PointingHandCursor)
+            btn_close.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    color: #78909C;
+                    border: none;
+                    font-size: 14px;
+                }
+                QPushButton:hover {
+                    color: white;
+                }
+            """)
+            btn_close.clicked.connect(self._update_banner.hide)
+            self._update_banner_layout.addWidget(btn_close)
+
+    def _abrir_download(self):
+        """Inicia download automático se possível, senão abre browser."""
+        if hasattr(self, '_update_zip_url') and self._update_zip_url:
+            self._mostrar_progresso_download(self._update_zip_url)
+        else:
+            abrir_download()
+
+    def _mostrar_progresso_download(self, zip_url: str):
+        """Abre janela modal de progresso de download e instala automaticamente."""
+        from PySide6.QtWidgets import QDialog, QProgressBar
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Instalando Atualização")
+        dialog.setFixedSize(480, 220)
+        dialog.setStyleSheet("background-color: #0A1628; border: none;")
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(15)
+
+        title = QLabel("⬇️  Baixando atualização...")
+        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #4FC3F7;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        status_lbl = QLabel("Conectando ao servidor...")
+        status_lbl.setStyleSheet("font-size: 13px; color: #78909C;")
+        status_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(status_lbl)
+
+        prog_bar = QProgressBar()
+        prog_bar.setFixedHeight(12)
+        prog_bar.setRange(0, 100)
+        prog_bar.setValue(0)
+        prog_bar.setTextVisible(False)
+        prog_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1e2a3a;
+                border-radius: 6px;
+            }
+            QProgressBar::chunk {
+                background-color: #3d5afe;
+                border-radius: 6px;
+            }
+        """)
+        layout.addWidget(prog_bar)
+
+        pct_lbl = QLabel("0%")
+        pct_lbl.setStyleSheet("font-size: 12px; color: #546E7A;")
+        pct_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(pct_lbl)
+
+        def on_progress(pct: int, msg: str):
+            # Usar invokeMethod ou similar seria melhor para threads, 
+            # mas QTimer.singleShot(0, ...) funciona bem aqui.
+            QTimer.singleShot(0, lambda: [
+                prog_bar.setValue(pct),
+                status_lbl.setText(msg),
+                pct_lbl.setText(f"{pct}%")
+            ])
+
+        def on_success():
+            QTimer.singleShot(0, lambda: [
+                status_lbl.setText("✅ Instalação pronta! Reiniciando..."),
+                status_lbl.setStyleSheet("color: #66BB6A; font-weight: bold;"),
+                QTimer.singleShot(2000, self.close) # Fecha o app para o .bat assumir
+            ])
+
+        def on_error(msg: str):
+            QTimer.singleShot(0, lambda: [
+                status_lbl.setText(f"❌ Erro: {msg}"),
+                status_lbl.setStyleSheet("color: #EF5350;"),
+                QPushButton("OK", dialog, clicked=dialog.reject).pack()
+            ])
+
+        baixar_e_instalar(zip_url, on_progress, on_success, on_error)
+        dialog.exec()
+
+    def _verificar_expiracao_licenca(self):
+        """Verifica se a licença expira em breve e mostra o banner se necessário."""
+        def _check():
+            try:
+                info = validar_licenca("")
+                dias = info.get("dias_restantes", 999)
+                if 0 <= dias <= 3:
+                    QTimer.singleShot(0, lambda: self._mostrar_banner_expiracao(dias))
+            except Exception:
+                pass
+
+        threading.Thread(target=_check, daemon=True).start()
+
+    def _mostrar_banner_expiracao(self, dias: int):
+        """Exibe o banner laranja de aviso de expiração no topo."""
+        # Limpar layout anterior
+        while self._license_banner_layout.count():
+            item = self._license_banner_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._license_banner.show()
+
+        msg = f"⚠️ Sua licença expira em {dias} dia(s)! Renove agora para continuar usando." if dias > 0 else "⚠️ Sua licença expira HOJE! Renove agora para não perder o acesso."
+        
+        lbl = QLabel(msg)
+        lbl.setStyleSheet("color: #FFB74D; font-weight: bold; font-size: 13px;")
+        self._license_banner_layout.addWidget(lbl)
+        
+        self._license_banner_layout.addStretch()
+
+        btn_renovar = QPushButton("💎  Renovar Agora")
+        btn_renovar.setFixedSize(140, 28)
+        btn_renovar.setCursor(Qt.PointingHandCursor)
+        btn_renovar.setStyleSheet("""
+            QPushButton {
+                background-color: #E65100;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #EF6C00;
+            }
+        """)
+        btn_renovar.clicked.connect(self._abrir_whatsapp_renovacao)
+        self._license_banner_layout.addWidget(btn_renovar)
+
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(28, 28)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #78909C;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                color: white;
+            }
+        """)
+        btn_close.clicked.connect(self._license_banner.hide)
+        self._license_banner_layout.addWidget(btn_close)
+
+    def _abrir_whatsapp_renovacao(self):
+        """Abre o WhatsApp para renovação da licença."""
+        import webbrowser
+        import urllib.parse
+        mid = get_machine_id()
+        msg = f"Olá Robinson, minha licença do Ross PDF Editor está vencendo (ID: {mid}) e gostaria de renovar."
+        url = f"https://wa.me/5516991080895?text={urllib.parse.quote(msg)}"
+        webbrowser.open(url)
+
     # ══════════════════════════════════════════════════════════
     # Drop Zone
     # ══════════════════════════════════════════════════════════
 
     def _show_drop_zone(self):
         """Mostra a tela inicial de drop zone."""
+        if hasattr(self, 'drop_zone') and self.drop_zone:
+            return
+
         self.drop_zone = DropZone()
         self.drop_zone.file_dropped = self._open_file
         self.drop_zone.btn_open.clicked.connect(self._action_open)
         self.main_layout.addWidget(self.drop_zone, alignment=Qt.AlignCenter)
+        self.act_new.setEnabled(False)
 
     def _hide_drop_zone(self):
         """Esconde a drop zone e mostra as páginas."""
@@ -299,6 +556,7 @@ class MainWindow(QMainWindow):
             self.main_layout.removeWidget(self.drop_zone)
             self.drop_zone.deleteLater()
             self.drop_zone = None
+            self.act_new.setEnabled(True)
 
     # ══════════════════════════════════════════════════════════
     # Ações
@@ -674,6 +932,7 @@ class MainWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════
 
     def _enable_tools(self, enabled: bool):
+        self.act_new.setEnabled(enabled)
         self.act_save.setEnabled(enabled)
         self.act_save_as.setEnabled(enabled)
         self.act_add_pages.setEnabled(enabled)

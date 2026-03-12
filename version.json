@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "release_date": "2026-03-11",
+  "download_zip_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest/download/RossPDFEditor.zip",
+  "download_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest",
+  "changelog": [
+    "Versão inicial com suporte a Drag & Drop",
+    "Correção de reordenação (Swap de páginas)",
+    "Implementação de Auto-Update Ross"
+  ],
+  "mandatory": false
+}
