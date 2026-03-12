@@ -409,8 +409,8 @@ class MainWindow(QMainWindow):
                     0, lambda: self._mostrar_banner_update(v, c, m, z)
                 )
             )
-        except Exception as e:
-            print(f"[DEBUG] Falha na verificação de update: {e}")
+        except Exception:
+            pass
 
     def _mostrar_banner_update(self, nova_versao: str, changelog: list[str], obrigatoria: bool, zip_url: str = ""):
         """Exibe o banner de notificação de update no topo do app."""
@@ -523,32 +523,24 @@ class MainWindow(QMainWindow):
         Executado na thread principal (via QTimer), igual ao DocPopular."""
         try:
             saved_key = self._settings.value("license_key", "")
-            print(f"[DEBUG] Iniciando verificação de expiração (Key: {saved_key[:10]}...)")
             info = validar_licenca(saved_key)
             if info is None:
-                print("[DEBUG] validar_licenca retornou None")
                 return
             dias = info.get("dias_restantes", 999)
-            print(f"[DEBUG] Dias restantes calculados: {dias}")
             
             if 0 <= dias <= 3:
-                print(f"[DEBUG] Mostrando banner de expiração ({dias} dias)")
                 self._mostrar_banner_expiracao(dias)
-            else:
-                print(f"[DEBUG] Não é necessário mostrar banner (dias > 3)")
-        except Exception as e:
-            print(f"[DEBUG] Erro na verificação de expiração: {e}")
+        except Exception:
+            pass
 
     def _mostrar_banner_expiracao(self, dias: int):
         """Exibe o banner laranja de aviso de expiração no topo."""
-        print(f"[DEBUG] _mostrar_banner_expiracao chamado para {dias} dias")
         
         msg = f"⚠️ SUA LICENÇA EXPIRA EM {dias} DIA(S)! Renove agora para continuar usando." if dias > 0 else "⚠️ SUA LICENÇA EXPIRA HOJE! Renove agora para não perder o acesso."
         self._lbl_license_msg.setText(msg)
         
         self._license_banner.show()
         self._license_banner.raise_()
-        print(f"[DEBUG] Banner visível? {self._license_banner.isVisible()} - Geometria: {self._license_banner.geometry()}")
 
     def _abrir_whatsapp_renovacao(self):
         """Abre o WhatsApp para renovação da licença."""

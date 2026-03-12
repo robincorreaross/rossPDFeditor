@@ -125,37 +125,40 @@ class HelpScreen(QDialog):
 
         # Vencimento, Plano e Dias Restantes
         info_row = QHBoxLayout()
+        plano_nome = self.license_info.get("plano", "—").upper()
+        is_vitalicio = plano_nome == "VITALICIO"
 
-        expiry_text = self.license_info.get("expiry", "—")
-        vencimento = QLabel(f"📅 Vencimento: {expiry_text}")
-        vencimento.setStyleSheet("font-size: 13px; color: #4FC3F7; border: none; background: transparent;")
-        info_row.addWidget(vencimento)
+        if not is_vitalicio:
+            expiry_text = self.license_info.get("expiry", "—")
+            vencimento = QLabel(f"📅 Vencimento: {expiry_text}")
+            vencimento.setStyleSheet("font-size: 13px; color: #4FC3F7; border: none; background: transparent;")
+            info_row.addWidget(vencimento)
 
         info_row.addStretch()
 
-        plano = self.license_info.get("plano", "—")
-        tipo_label = QLabel(f"Plano: {plano.upper()}")
+        tipo_label = QLabel(f"Plano: {plano_nome}")
         tipo_label.setStyleSheet("font-size: 13px; color: #90A4AE; border: none; background: transparent;")
         info_row.addWidget(tipo_label)
 
         card1_layout.addLayout(info_row)
 
-        # Dias restantes com cor condicional
-        dias = self.license_info.get("dias_restantes", -1)
-        if isinstance(dias, int) and dias >= 0:
-            if dias <= 3:
-                dias_cor = "#EF5350"  # Vermelho
-                dias_texto = f"⚠️ Atenção: restam apenas {dias} dia(s) de licença!"
-            elif dias <= 7:
-                dias_cor = "#FFB74D"  # Amarelo
-                dias_texto = f"⏳ Restam {dias} dia(s) de licença."
-            else:
-                dias_cor = "#66BB6A"  # Verde
-                dias_texto = f"✅ Licença válida por mais {dias} dia(s)."
-            
-            dias_label = QLabel(dias_texto)
-            dias_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {dias_cor}; border: none; background: transparent; padding-top: 4px;")
-            card1_layout.addWidget(dias_label)
+        # Dias restantes com cor condicional (Não mostrar se for VITALICIO)
+        if not is_vitalicio:
+            dias = self.license_info.get("dias_restantes", -1)
+            if isinstance(dias, int) and dias >= 0:
+                if dias <= 3:
+                    dias_cor = "#EF5350"  # Vermelho
+                    dias_texto = f"⚠️ Atenção: restam apenas {dias} dia(s) de licença!"
+                elif dias <= 7:
+                    dias_cor = "#FFB74D"  # Amarelo
+                    dias_texto = f"⏳ Restam {dias} dia(s) de licença."
+                else:
+                    dias_cor = "#66BB6A"  # Verde
+                    dias_texto = f"✅ Licença válida por mais {dias} dia(s)."
+                
+                dias_label = QLabel(dias_texto)
+                dias_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {dias_cor}; border: none; background: transparent; padding-top: 4px;")
+                card1_layout.addWidget(dias_label)
 
         layout.addWidget(card1)
         layout.addSpacing(20)
