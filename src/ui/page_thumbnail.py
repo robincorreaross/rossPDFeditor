@@ -6,12 +6,14 @@ Cada página do PDF é representada por um card com:
 - Número da página
 - Indicador de seleção
 - Botão de excluir (ao hover)
+- Botão de duplicar (ao hover)
+- Suporte a Drag & Drop para reordenação
 """
 
-from PySide6.QtCore import Qt, Signal, QSize, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon
+from PySide6.QtCore import Qt, Signal, QSize, QPropertyAnimation, QEasingCurve, QMimeData, QPoint
+from PySide6.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QIcon, QDrag
 from PySide6.QtWidgets import (
-    QFrame, QVBoxLayout, QLabel, QPushButton, QGraphicsOpacityEffect
+    QFrame, QVBoxLayout, QLabel, QPushButton, QGraphicsOpacityEffect, QApplication
 )
 
 
@@ -23,6 +25,8 @@ class PageThumbnail(QFrame):
     duplicate_requested = Signal(int) # índice da página
     crop_requested = Signal(int)    # índice da página
     double_clicked = Signal(int)    # índice da página
+    drag_started = Signal(int)      # índice da página sendo arrastada
+    drop_received = Signal(int, int)  # (from_index, to_index)
 
     THUMB_WIDTH = 180
     THUMB_HEIGHT = 240
@@ -31,10 +35,13 @@ class PageThumbnail(QFrame):
         super().__init__(parent)
         self.page_index = page_index
         self._selected = False
+        self._drag_start_pos = None
+        self._is_drag_over = False
 
         self.setObjectName("page_card")
         self.setFixedSize(self.THUMB_WIDTH + 20, self.THUMB_HEIGHT + 50)
         self.setCursor(Qt.PointingHandCursor)
+        self.setAcceptDrops(True)
 
         # ── Layout ───────────────────────────────────────────
         layout = QVBoxLayout(self)
@@ -141,17 +148,102 @@ class PageThumbnail(QFrame):
         self.style().polish(self)
         self.update()
 
-    # ── Eventos ──────────────────────────────────────────────
+    # ── Eventos de Mouse (Drag) ───────────────────────────────
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self._drag_start_pos = event.pos()
             self.clicked.emit(self.page_index)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton) or self._drag_start_pos is None:
+            return
+
+        # Só inicia o drag se mover mais de 20px (evita drag acidental)
+        distance = (event.pos() - self._drag_start_pos).manhattanLength()
+        if distance < 20:
+            return
+
+        # Criar o drag visual
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setText(str(self.page_index))
+        drag.setMimeData(mime)
+
+        # Criar miniatura semi-transparente para o cursor
+        pixmap = self.grab()
+        scaled_pixmap = pixmap.scaled(
+            120, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+
+        # Adicionar efeito de transparência
+        transparent = QPixmap(scaled_pixmap.size())
+        transparent.fill(Qt.transparent)
+        painter = QPainter(transparent)
+        painter.setOpacity(0.7)
+        painter.drawPixmap(0, 0, scaled_pixmap)
+        painter.end()
+
+        drag.setPixmap(transparent)
+        drag.setHotSpot(QPoint(transparent.width() // 2, transparent.height() // 2))
+
+        self.drag_started.emit(self.page_index)
+        drag.exec(Qt.MoveAction)
+        self._drag_start_pos = None
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.double_clicked.emit(self.page_index)
         super().mouseDoubleClickEvent(event)
+
+    # ── Eventos de Drop ───────────────────────────────────────
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasText():
+            try:
+                from_index = int(event.mimeData().text())
+                if from_index != self.page_index:
+                    event.acceptProposedAction()
+                    self._is_drag_over = True
+                    self.setStyleSheet("""
+                        QFrame#page_card {
+                            border: 3px solid #3d5afe;
+                            border-radius: 12px;
+                            background-color: #1a1a40;
+                        }
+                    """)
+                    return
+            except ValueError:
+                pass
+        event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._is_drag_over = False
+        self.setStyleSheet("")  # Remove o destaque
+        # Re-aplica selected se necessário
+        if self._selected:
+            self.selected = True
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        self._is_drag_over = False
+        self.setStyleSheet("")
+        if self._selected:
+            self.selected = True
+
+        if event.mimeData().hasText():
+            try:
+                from_index = int(event.mimeData().text())
+                if from_index != self.page_index:
+                    event.acceptProposedAction()
+                    self.drop_received.emit(from_index, self.page_index)
+                    return
+            except ValueError:
+                pass
+        event.ignore()
+
+    # ── Hover ─────────────────────────────────────────────────
 
     def enterEvent(self, event):
         self.btn_delete.show()

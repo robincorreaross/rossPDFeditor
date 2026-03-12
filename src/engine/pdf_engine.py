@@ -137,11 +137,22 @@ class PDFEngine:
 
     # ── Reordenar Páginas ────────────────────────────────────────
 
-    def move_page(self, from_index: int, to_index: int):
-        """Move uma página de from_index para to_index."""
+    def swap_pages(self, index1: int, index2: int):
+        """Troca as posições de duas páginas entre si (Swap)."""
         if self.doc is None:
             raise ValueError("Nenhum documento aberto.")
-        self.doc.move_page(from_index, to_index)
+        
+        count = self.doc.page_count
+        if not (0 <= index1 < count and 0 <= index2 < count):
+            raise ValueError("Índices de página inválidos.")
+
+        # Criar a nova lista de ordem de páginas
+        page_list = list(range(count))
+        # Swap dos índices
+        page_list[index1], page_list[index2] = page_list[index2], page_list[index1]
+        
+        # Aplicar a nova ordem
+        self.doc.select(page_list)
 
     def duplicate_page(self, page_index: int):
         """Duplica a página especificada, inserindo a cópia logo após ela."""

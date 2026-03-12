@@ -579,6 +579,7 @@ class MainWindow(QMainWindow):
             thumb.delete_requested.connect(self._on_page_delete)
             thumb.duplicate_requested.connect(self._on_page_duplicate)
             thumb.double_clicked.connect(self._on_page_double_click)
+            thumb.drop_received.connect(self._on_page_drop)
 
             row = i // cols
             col = i % cols
@@ -645,6 +646,20 @@ class MainWindow(QMainWindow):
         self.status.showMessage(
             f"Página {index + 1} duplicada — "
             f"Total: {self.engine.page_count} página(s)"
+        )
+
+    def _on_page_drop(self, from_index: int, to_index: int):
+        """Trocar a posição de duas páginas (Swap via drag & drop)."""
+        if from_index == to_index:
+            return
+
+        self._push_snapshot()
+        self.engine.swap_pages(from_index, to_index)
+        self.selected_indices.clear()
+        self.is_dirty = True
+        self._rebuild_thumbnails()
+        self.status.showMessage(
+            f"Página {from_index + 1} trocada com Página {to_index + 1}"
         )
 
     def _on_page_double_click(self, index: int):
