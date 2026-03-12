@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.core.license import get_machine_id, validar_licenca, LicenseError
+from PySide6.QtCore import QSettings
 
 
 class HelpScreen(QDialog):
@@ -26,10 +27,11 @@ class HelpScreen(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.machine_id = get_machine_id()
+        self._settings = QSettings("Ross", "RossPDFEditor")
         self.license_info = self._get_license_info()
 
         self.setWindowTitle("Ross PDF Editor — Ajuda e Suporte")
-        self.setFixedSize(600, 460)
+        self.setFixedSize(600, 500)
         self.setStyleSheet(self._global_styles())
         self._build()
 
@@ -54,10 +56,11 @@ class HelpScreen(QDialog):
 
     def _get_license_info(self) -> dict:
         try:
-            info = validar_licenca("")
+            saved_key = self._settings.value("license_key", "")
+            info = validar_licenca(saved_key)
             return info
         except Exception:
-            return {"valido": False, "expiry": "—", "plano": "—"}
+            return {"valido": False, "expiry": "—", "plano": "—", "dias_restantes": -1}
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -120,7 +123,7 @@ class HelpScreen(QDialog):
 
         card1_layout.addWidget(mid_box)
 
-        # Vencimento e Tipo
+        # Vencimento, Plano e Dias Restantes
         info_row = QHBoxLayout()
 
         expiry_text = self.license_info.get("expiry", "—")
@@ -136,8 +139,27 @@ class HelpScreen(QDialog):
         info_row.addWidget(tipo_label)
 
         card1_layout.addLayout(info_row)
+
+        # Dias restantes com cor condicional
+        dias = self.license_info.get("dias_restantes", -1)
+        if isinstance(dias, int) and dias >= 0:
+            if dias <= 3:
+                dias_cor = "#EF5350"  # Vermelho
+                dias_texto = f"⚠️ Atenção: restam apenas {dias} dia(s) de licença!"
+            elif dias <= 7:
+                dias_cor = "#FFB74D"  # Amarelo
+                dias_texto = f"⏳ Restam {dias} dia(s) de licença."
+            else:
+                dias_cor = "#66BB6A"  # Verde
+                dias_texto = f"✅ Licença válida por mais {dias} dia(s)."
+            
+            dias_label = QLabel(dias_texto)
+            dias_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {dias_cor}; border: none; background: transparent; padding-top: 4px;")
+            card1_layout.addWidget(dias_label)
+
         layout.addWidget(card1)
         layout.addSpacing(20)
+
 
         # ── Card: Suporte Técnico ──
         card2 = QFrame()

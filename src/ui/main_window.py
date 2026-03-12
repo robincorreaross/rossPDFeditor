@@ -150,9 +150,10 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self._show_drop_zone()
 
-        # Verificação de atualização e licença após 1-2 segundos
+        # Verificações em background após a janela estar pronta (igual DocPopular)
         QTimer.singleShot(1000, self._iniciar_verificacao_update)
         QTimer.singleShot(2000, self._verificar_expiracao_licenca)
+
 
     # ══════════════════════════════════════════════════════════
     # Setup
@@ -261,6 +262,104 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        # Banner de atualização (oculto inicialmente)
+        self._update_banner = QFrame(self.central_widget)
+        self._update_banner.setObjectName("updateBanner")
+        self._update_banner.setFixedHeight(42)
+        self._update_banner.setStyleSheet("QFrame#updateBanner { background-color: #0D2B0D; border: none; }")
+        self._update_banner_layout = QHBoxLayout(self._update_banner)
+        self._update_banner_layout.setContentsMargins(20, 0, 20, 0)
+        
+        self._lbl_update_msg = QLabel("")
+        self._lbl_update_msg.setStyleSheet("color: white; font-weight: bold; font-size: 13px; border: none; background: transparent;")
+        self._update_banner_layout.addWidget(self._lbl_update_msg)
+        
+        self._update_banner_layout.addStretch()
+        
+        self._btn_download_update = QPushButton("⬇️  Baixar agora")
+        self._btn_download_update.setFixedSize(130, 28)
+        self._btn_download_update.setCursor(Qt.PointingHandCursor)
+        self._btn_download_update.setStyleSheet("""
+            QPushButton {
+                background-color: #2E7D32;
+                color: white;
+                font-weight: bold;
+                border-radius: 6px;
+                border: none;
+                font-size: 12px;
+            }
+            QPushButton:hover { background-color: #388E3C; }
+        """)
+        self._btn_download_update.clicked.connect(self._abrir_download)
+        self._update_banner_layout.addWidget(self._btn_download_update)
+        
+        self._btn_close_update = QPushButton("✕")
+        self._btn_close_update.setFixedSize(28, 28)
+        self._btn_close_update.setCursor(Qt.PointingHandCursor)
+        self._btn_close_update.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #A5D6A7;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover { color: white; }
+        """)
+        self._btn_close_update.clicked.connect(self._update_banner.hide)
+        self._update_banner_layout.addWidget(self._btn_close_update)
+        
+        self._update_banner.hide()
+
+        # Banner de licença (oculto inicialmente)
+        self._license_banner = QFrame(self.central_widget)
+        self._license_banner.setObjectName("licenseBanner")
+        self._license_banner.setFixedHeight(45)
+        self._license_banner.setStyleSheet("QFrame#licenseBanner { background-color: #D84315; border-bottom: 1px solid #BF360C; }") 
+        self._license_banner_layout = QHBoxLayout(self._license_banner)
+        self._license_banner_layout.setContentsMargins(20, 0, 20, 0)
+        
+        self._lbl_license_msg = QLabel("")
+        self._lbl_license_msg.setStyleSheet("color: white; font-weight: bold; font-size: 13px; border: none; background: transparent;")
+        self._license_banner_layout.addWidget(self._lbl_license_msg)
+        
+        self._btn_renovar = QPushButton("💎  Renovar Agora")
+        self._btn_renovar.setFixedSize(140, 28)
+        self._btn_renovar.setCursor(Qt.PointingHandCursor)
+        self._btn_renovar.setStyleSheet("""
+            QPushButton {
+                background-color: #E65100;
+                color: white;
+                font-weight: bold;
+                border-radius: 6px;
+                border: 1px solid #BF360C;
+                font-size: 12px;
+            }
+            QPushButton:hover { background-color: #F57C00; }
+        """)
+        self._btn_renovar.clicked.connect(self._abrir_whatsapp_renovacao)
+        self._license_banner_layout.addWidget(self._btn_renovar)
+        
+        self._license_banner_layout.addStretch()
+        
+        btn_close_lic = QPushButton("✕")
+        btn_close_lic.setFixedSize(28, 28)
+        btn_close_lic.setCursor(Qt.PointingHandCursor)
+        btn_close_lic.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #FFCCBC;
+                border: none;
+                font-size: 14px;
+            }
+            QPushButton:hover { color: white; }
+        """)
+        btn_close_lic.clicked.connect(self._license_banner.hide)
+        self._license_banner_layout.addWidget(btn_close_lic)
+        
+        self._license_banner.hide()
+
 
         # Scroll area para as páginas
         self.scroll_area = QScrollArea()
@@ -273,25 +372,18 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.pages_container)
         self.scroll_area.hide()
 
-        # Banner de atualização (oculto inicialmente)
-        self._update_banner = QFrame()
-        self._update_banner.setFixedHeight(42)
-        self._update_banner.setStyleSheet("background-color: #0D2B0D; border: none;")
-        self._update_banner_layout = QHBoxLayout(self._update_banner)
-        self._update_banner_layout.setContentsMargins(16, 0, 16, 0)
-        self._update_banner.hide()
-
-        # Banner de licença (oculto inicialmente)
-        self._license_banner = QFrame()
-        self._license_banner.setFixedHeight(42)
-        self._license_banner.setStyleSheet("background-color: #3E2723; border: none;") # Marrom escuro / Âmbar
-        self._license_banner_layout = QHBoxLayout(self._license_banner)
-        self._license_banner_layout.setContentsMargins(16, 0, 16, 0)
-        self._license_banner.hide()
+        # Wrapper para organizar a DropZone centralizada ou a ScrollArea expansiva
+        self.content_wrapper = QWidget()
+        self.wrapper_layout = QVBoxLayout(self.content_wrapper)
+        self.wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.wrapper_layout.addWidget(self.scroll_area, 1) # Scroll area preenche quando visível
 
         self.main_layout.addWidget(self._update_banner)
         self.main_layout.addWidget(self._license_banner)
-        self.main_layout.addWidget(self.scroll_area)
+        self.main_layout.addWidget(self.content_wrapper, 1)  # Wrapper preenche espaço restante
+
+
 
     def _setup_statusbar(self):
         self.status = QStatusBar()
@@ -324,61 +416,29 @@ class MainWindow(QMainWindow):
         """Exibe o banner de notificação de update no topo do app."""
         self._update_zip_url = zip_url
         
-        # Limpar layout anterior
-        while self._update_banner_layout.count():
-            item = self._update_banner_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        self._update_banner.show()
-
         emoji = "🚨" if obrigatoria else "🟢"
         tipo = "OBRIGATÓRIA" if obrigatoria else "disponível"
         desc = changelog[0] if changelog else ""
         texto = f"{emoji}  Atualização {tipo}: versão {nova_versao}   —   {desc}"
 
-        lbl = QLabel(texto)
-        lbl.setStyleSheet(f"color: {'#FFCDD2' if obrigatoria else '#A5D6A7'}; font-weight: bold; font-size: 13px;")
-        self._update_banner_layout.addWidget(lbl)
+        self._lbl_update_msg.setText(texto)
+        self._lbl_update_msg.setStyleSheet(f"color: {'#FFCDD2' if obrigatoria else '#A5D6A7'}; font-weight: bold; font-size: 13px; border: none; background: transparent;")
         
-        self._update_banner_layout.addStretch()
-
-        btn_download = QPushButton("⬇️  Baixar agora")
-        btn_download.setFixedSize(130, 28)
-        btn_download.setCursor(Qt.PointingHandCursor)
-        btn_download.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {'#C62828' if obrigatoria else '#2E7D32'};
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 11px;
-            }}
-            QPushButton:hover {{
-                background-color: {'#D32F2F' if obrigatoria else '#388E3C'};
-            }}
-        """)
-        btn_download.clicked.connect(self._abrir_download)
-        self._update_banner_layout.addWidget(btn_download)
-
-        if not obrigatoria:
-            btn_close = QPushButton("✕")
-            btn_close.setFixedSize(28, 28)
-            btn_close.setCursor(Qt.PointingHandCursor)
-            btn_close.setStyleSheet("""
-                QPushButton {
-                    background-color: transparent;
-                    color: #78909C;
-                    border: none;
-                    font-size: 14px;
-                }
-                QPushButton:hover {
-                    color: white;
-                }
+        if obrigatoria:
+            self._btn_download_update.setStyleSheet("""
+                QPushButton { background-color: #C62828; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 11px; }
+                QPushButton:hover { background-color: #D32F2F; }
             """)
-            btn_close.clicked.connect(self._update_banner.hide)
-            self._update_banner_layout.addWidget(btn_close)
+            self._btn_close_update.hide()
+        else:
+            self._btn_download_update.setStyleSheet("""
+                QPushButton { background-color: #2E7D32; color: white; border: none; border-radius: 6px; font-weight: bold; font-size: 11px; }
+                QPushButton:hover { background-color: #388E3C; }
+            """)
+            self._btn_close_update.show()
+
+        self._update_banner.show()
+        self._update_banner.raise_()
 
     def _abrir_download(self):
         """Inicia download automático se possível, senão abre browser."""
@@ -459,71 +519,36 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _verificar_expiracao_licenca(self):
-        """Verifica se a licença expira em breve e mostra o banner se necessário."""
-        def _check():
-            try:
-                info = validar_licenca("")
-                dias = info.get("dias_restantes", 999)
-                if 0 <= dias <= 3:
-                    QTimer.singleShot(0, lambda: self._mostrar_banner_expiracao(dias))
-            except Exception:
-                pass
-
-        threading.Thread(target=_check, daemon=True).start()
+        """Verifica se a licença expira em breve e mostra o banner se necessário.
+        Executado na thread principal (via QTimer), igual ao DocPopular."""
+        try:
+            saved_key = self._settings.value("license_key", "")
+            print(f"[DEBUG] Iniciando verificação de expiração (Key: {saved_key[:10]}...)")
+            info = validar_licenca(saved_key)
+            if info is None:
+                print("[DEBUG] validar_licenca retornou None")
+                return
+            dias = info.get("dias_restantes", 999)
+            print(f"[DEBUG] Dias restantes calculados: {dias}")
+            
+            if 0 <= dias <= 3:
+                print(f"[DEBUG] Mostrando banner de expiração ({dias} dias)")
+                self._mostrar_banner_expiracao(dias)
+            else:
+                print(f"[DEBUG] Não é necessário mostrar banner (dias > 3)")
+        except Exception as e:
+            print(f"[DEBUG] Erro na verificação de expiração: {e}")
 
     def _mostrar_banner_expiracao(self, dias: int):
         """Exibe o banner laranja de aviso de expiração no topo."""
-        # Limpar layout anterior
-        while self._license_banner_layout.count():
-            item = self._license_banner_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
+        print(f"[DEBUG] _mostrar_banner_expiracao chamado para {dias} dias")
+        
+        msg = f"⚠️ SUA LICENÇA EXPIRA EM {dias} DIA(S)! Renove agora para continuar usando." if dias > 0 else "⚠️ SUA LICENÇA EXPIRA HOJE! Renove agora para não perder o acesso."
+        self._lbl_license_msg.setText(msg)
+        
         self._license_banner.show()
-
-        msg = f"⚠️ Sua licença expira em {dias} dia(s)! Renove agora para continuar usando." if dias > 0 else "⚠️ Sua licença expira HOJE! Renove agora para não perder o acesso."
-        
-        lbl = QLabel(msg)
-        lbl.setStyleSheet("color: #FFB74D; font-weight: bold; font-size: 13px;")
-        self._license_banner_layout.addWidget(lbl)
-        
-        self._license_banner_layout.addStretch()
-
-        btn_renovar = QPushButton("💎  Renovar Agora")
-        btn_renovar.setFixedSize(140, 28)
-        btn_renovar.setCursor(Qt.PointingHandCursor)
-        btn_renovar.setStyleSheet("""
-            QPushButton {
-                background-color: #E65100;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #EF6C00;
-            }
-        """)
-        btn_renovar.clicked.connect(self._abrir_whatsapp_renovacao)
-        self._license_banner_layout.addWidget(btn_renovar)
-
-        btn_close = QPushButton("✕")
-        btn_close.setFixedSize(28, 28)
-        btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #78909C;
-                border: none;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                color: white;
-            }
-        """)
-        btn_close.clicked.connect(self._license_banner.hide)
-        self._license_banner_layout.addWidget(btn_close)
+        self._license_banner.raise_()
+        print(f"[DEBUG] Banner visível? {self._license_banner.isVisible()} - Geometria: {self._license_banner.geometry()}")
 
     def _abrir_whatsapp_renovacao(self):
         """Abre o WhatsApp para renovação da licença."""
@@ -546,17 +571,31 @@ class MainWindow(QMainWindow):
         self.drop_zone = DropZone()
         self.drop_zone.file_dropped = self._open_file
         self.drop_zone.btn_open.clicked.connect(self._action_open)
-        self.main_layout.addWidget(self.drop_zone, alignment=Qt.AlignCenter)
+        
+        # Centraliza a DropZone no wrapper
+        self.wrapper_layout.addStretch(1)
+        self.wrapper_layout.addWidget(self.drop_zone, alignment=Qt.AlignCenter)
+        self.wrapper_layout.addStretch(1)
+        
         self.act_new.setEnabled(False)
 
     def _hide_drop_zone(self):
         """Esconde a drop zone e mostra as páginas."""
         if hasattr(self, 'drop_zone') and self.drop_zone:
             self.drop_zone.hide()
-            self.main_layout.removeWidget(self.drop_zone)
+            
+            # Limpa tudo do wrapper exceto a scroll_area
+            for i in reversed(range(self.wrapper_layout.count())):
+                item = self.wrapper_layout.itemAt(i)
+                if item.widget() == self.drop_zone:
+                    item.widget().setParent(None)
+                elif item.spacerItem():
+                    self.wrapper_layout.removeItem(item)
+
             self.drop_zone.deleteLater()
             self.drop_zone = None
             self.act_new.setEnabled(True)
+
 
     # ══════════════════════════════════════════════════════════
     # Ações
