@@ -8,7 +8,17 @@ taskkill /F /IM RossPDFEditor.exe /T >nul 2>&1
 taskkill /F /IM ISCC.exe /T >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-REM Limpa a pasta installer para evitar erros de lock
+REM Limpa pastas de build anteriores para evitar erros de permissao
+if exist build (
+    echo [+] Limpando pasta build anterior...
+    rmdir /s /q build >nul 2>&1
+)
+if exist dist (
+    echo [+] Limpando pasta dist anterior...
+    rmdir /s /q dist >nul 2>&1
+)
+
+REM Limpa a pasta installer para novos artefatos
 if exist installer (
     echo [+] Limpando pasta installer...
     del /q installer\* >nul 2>&1
@@ -62,6 +72,13 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 echo     OK - installer\%ZIP_BASE_NAME%.zip (v%APP_VERSION%)
+
+echo.
+echo [4/4] Limpeza pos-build...
+echo [+] Removendo pastas temporarias (build/dist)...
+rmdir /s /q build >nul 2>&1
+rmdir /s /q dist >nul 2>&1
+echo     Concluido.
 
 echo.
 echo ============================================================
