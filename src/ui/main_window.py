@@ -160,7 +160,7 @@ class MainWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════
 
     def _setup_window(self):
-        self.setWindowTitle(self.APP_TITLE)
+        self.setWindowTitle(f"{self.APP_TITLE} v{APP_VERSION}")
         self.setMinimumSize(900, 650)
         self.resize(1100, 750)
         self.setAcceptDrops(True)
@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
         try:
             verificar_atualizacao(
                 on_update_available=lambda v, c, m, z: QTimer.singleShot(
-                    0, lambda: self._mostrar_banner_update(v, c, m, z)
+                    0, self, lambda: self._mostrar_banner_update(v, c, m, z)
                 )
             )
         except Exception:
@@ -494,18 +494,18 @@ class MainWindow(QMainWindow):
 
         def on_progress(pct: int, msg: str):
             # Usar invokeMethod ou similar seria melhor para threads, 
-            # mas QTimer.singleShot(0, ...) funciona bem aqui.
-            QTimer.singleShot(0, lambda: [
+            # mas QTimer.singleShot(0, self, ...) funciona bem aqui.
+            QTimer.singleShot(0, self, lambda: [
                 prog_bar.setValue(pct),
                 status_lbl.setText(msg),
                 pct_lbl.setText(f"{pct}%")
             ])
 
         def on_success():
-            QTimer.singleShot(0, lambda: [
-                status_lbl.setText("✅ Instalação pronta! Reiniciando..."),
+            QTimer.singleShot(0, self, lambda: [
+                status_lbl.setText("✅ Pronto! Reiniciando em 2s..."),
                 status_lbl.setStyleSheet("color: #66BB6A; font-weight: bold;"),
-                QTimer.singleShot(2000, self.close) # Fecha o app para o .bat assumir
+                QTimer.singleShot(2000, QApplication.quit)
             ])
 
         def on_error(msg: str):

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from src.core.license import get_machine_id, validar_licenca, LicenseError
 from PySide6.QtCore import QSettings
+from version import APP_VERSION
 
 
 class HelpScreen(QDialog):
@@ -136,7 +137,7 @@ class HelpScreen(QDialog):
 
         info_row.addStretch()
 
-        tipo_label = QLabel(f"Plano: {plano_nome}")
+        tipo_label = QLabel(f"Plano: {plano_nome} (v{APP_VERSION})")
         tipo_label.setStyleSheet("font-size: 13px; color: #90A4AE; border: none; background: transparent;")
         info_row.addWidget(tipo_label)
 

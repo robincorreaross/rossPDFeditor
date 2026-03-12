@@ -81,7 +81,7 @@ def get_app_dir() -> Path:
     """Retorna o diretório onde o executável do app está instalado."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
-    return Path(__file__).parent.parent
+    return Path(__file__).parent.parent.parent
 
 
 def baixar_e_instalar(
@@ -108,15 +108,30 @@ def baixar_e_instalar(
         try:
             # ── 1. Download ───────────────────────────────────────────────────
             on_progress(5, "Conectando ao servidor...")
-
-            def report_hook(count: int, block_size: int, total: int) -> None:
-                if total > 0:
-                    pct = min(int(count * block_size * 60 / total), 60)
-                    mb_done = count * block_size / (1024 * 1024)
-                    mb_total = total / (1024 * 1024)
-                    on_progress(5 + pct, f"Baixando... {mb_done:.1f} / {mb_total:.1f} MB")
-
-            urlretrieve(zip_url, zip_path, reporthook=report_hook)
+            
+            req = request.Request(zip_url, headers={"User-Agent": "RossPDFEditor-Updater"})
+            with request.urlopen(req, timeout=15) as response:
+                total_size = int(response.headers.get('Content-Length', 0))
+                
+                downloaded = 0
+                block_size = 8192
+                
+                with open(zip_path, 'wb') as f:
+                    while True:
+                        block = response.read(block_size)
+                        if not block:
+                            break
+                        f.write(block)
+                        downloaded += len(block)
+                        
+                        if total_size > 0:
+                            pct = min(int(downloaded * 60 / total_size), 60)
+                            mb_done = downloaded / (1024 * 1024)
+                            mb_total = total_size / (1024 * 1024)
+                            on_progress(5 + pct, f"Baixando... {mb_done:.1f} / {mb_total:.1f} MB")
+                        else:
+                            on_progress(10, f"Baixando... {downloaded/(1024*1024):.1f} MB")
+            
             on_progress(65, "Download concluído. Extraindo arquivos...")
 
             # ── 2. Extração ───────────────────────────────────────────────────
@@ -134,29 +149,35 @@ def baixar_e_instalar(
 
             # ── 3. Cria o bat helper ──────────────────────────────────────────
             app_dir = get_app_dir()
-            app_exe = app_dir / f"{APP_NAME}.exe"
-            bat_path = tmp_dir / "update_helper.bat"
+            
+            if getattr(sys, "frozen", False):
+                restart_cmd = f'start "" "{app_dir / (APP_NAME + ".exe")}"'
+            else:
+                restart_cmd = f'start python "{app_dir / "main.py"}"'
 
+            bat_path = tmp_dir / "update_helper.bat"
             bat_content = f"""@echo off
+setlocal enabledelayedexpansion
 title Ross PDF Editor - Instalando Atualizacao...
 echo Aguardando o aplicativo fechar...
 timeout /t 3 /nobreak >nul
 
 echo Instalando nova versao...
-robocopy "{source_dir}" "{app_dir}" /E /IS /IT /IM /R:3 /W:1 >nul 2>&1
+:: /R:5 /W:2 tenta 5 vezes esperando 2 seg se o arquivo estiver travado
+robocopy "{source_dir}" "{app_dir}" /E /IS /IT /IM /R:5 /W:2 /NP >nul 2>&1
+
 if errorlevel 8 (
-    echo ERRO ao copiar arquivos. Tente manualmente.
+    echo [ERRO] Nao foi possivel copiar todos os arquivos. 
+    echo Verifique se o aplicativo ainda esta aberto e tente novamente.
     pause
     exit /b 1
 )
 
 echo Limpando arquivos temporarios...
-rd /s /q "{tmp_dir}" >nul 2>&1
-
-echo Reiniciando o aplicativo...
-start "" "{app_exe}"
-exit
+(goto) 2>nul & rd /s /q "{tmp_dir}" >nul 2>&1 & {restart_cmd} & exit
 """
+            # Nota: O comando estranho acima '(goto) 2>nul...' permite que o bat se auto-delete 
+            # e execute o app logo em seguida se estiver dentro da tmp_dir (voodoo de batch)
             bat_path.write_text(bat_content, encoding="utf-8")
             on_progress(95, "Aplicando atualização...")
 
