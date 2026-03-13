@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from PySide6.QtCore import (
     Qt, QSize, QMimeData, QTimer, QPropertyAnimation, QEasingCurve,
-    QSettings, QStandardPaths
+    QSettings, QStandardPaths, QObject, Signal
 )
 from PySide6.QtGui import (
     QIcon, QAction, QKeySequence, QDragEnterEvent, QDropEvent,
@@ -32,6 +32,14 @@ from src.engine.scan_engine import ScannerEngine
 from src.ui.page_thumbnail import PageThumbnail
 from src.ui.crop_dialog import CropDialog
 from src.ui.settings_dialog import SettingsDialog
+
+class ScanWorkerSignals(QObject):
+    """
+    Sinais protegidos para transpor grandes blocos de memória
+    (Megabytes do Scanner) da Thread WIA para a Thread Principal do PySide6.
+    """
+    finished = Signal(object, object)  # png_bytes, error_msg
+    progress = Signal(str)             # status message
 from src.ui.help_screen import HelpScreen
 from src.core.updater import verificar_atualizacao, baixar_e_instalar, abrir_download
 from src.core.license import get_machine_id, validar_licenca
@@ -138,6 +146,11 @@ class MainWindow(QMainWindow):
         self.thumbnails: list[PageThumbnail] = []
         self.selected_indices: set[int] = set()
         self.is_dirty = False  # Rastreia se há alterações não salvas
+        
+        # Sinais permanentes para travessia thread-safe WIA > UI
+        self._scan_signals = ScanWorkerSignals()
+        self._scan_signals.finished.connect(self._on_scan_received_safely)
+        self._scan_signals.progress.connect(self._on_scan_status_safely)
         
         # Estado de hardware e atualização
         self.scanners_available = False
@@ -853,35 +866,42 @@ class MainWindow(QMainWindow):
         self.act_scan.setEnabled(False)
         
         def on_scan_finished(png_bytes, error):
-            def handle_result():
-                self.act_scan.setEnabled(True)
-                
-                if error:
-                    if "cancelou" in error.lower():
-                        self.status.showMessage("Escaneamento cancelado pelo usuário.")
-                    elif "0x80210015" in error or "Nenhum Scanner" in error:
-                        QMessageBox.information(
-                            self, "Scanner", 
-                            "Nenhum Scanner Detectado.\n\nVá em Configurações (⚙️) para selecionar seu dispositivo."
-                        )
-                        self.status.showMessage("Nenhum scanner disponível.")
-                    else:
-                        QMessageBox.warning(self, "Scanner", f"Erro no Scanner:\n{error}")
-                        self.status.showMessage("Falha ao escanear página.")
-                elif png_bytes:
-                    self._push_snapshot()
-                    self.engine.insert_image_bytes(png_bytes)
-                    self.is_dirty = True
-                    self._rebuild_thumbnails()
-                    self.status.showMessage("Página escaneada e adicionada com sucesso!")
-                
-            QTimer.singleShot(0, handle_result)
+            self._scan_signals.finished.emit(png_bytes, error)
 
         def on_scan_status_update(msg):
-            # QTimer usado para injetar atualização de thread secundária na UI Thread de modo seguro
-            QTimer.singleShot(0, lambda: self.status.showMessage(f"Scanner [{msg}]"))
+            self._scan_signals.progress.emit(msg)
 
         self.scanner.scan_with_dialog(on_scan_finished, on_scan_status_update, device_name=scanner_name)
+
+    def _on_scan_status_safely(self, msg: str):
+        self.status.showMessage(f"Scanner [{msg}]")
+        
+    def _on_scan_received_safely(self, png_bytes, error):
+        self.act_scan.setEnabled(True)
+        
+        if error:
+            if "cancelou" in error.lower():
+                self.status.showMessage("Escaneamento cancelado pelo usuário.")
+            elif "0x80210015" in error or "Nenhum Scanner" in error:
+                QMessageBox.information(
+                    self, "Scanner", 
+                    "Nenhum Scanner Detectado.\n\nVá em Configurações (⚙️) para selecionar seu dispositivo."
+                )
+                self.status.showMessage("Nenhum scanner disponível.")
+            else:
+                QMessageBox.warning(self, "Scanner", f"Erro no Scanner:\n{error}")
+                self.status.showMessage("Falha ao escanear página.")
+        elif png_bytes:
+            try:
+                self.status.showMessage("Processando imagem extraída no PDFEngine...")
+                self._push_snapshot()
+                self.engine.insert_image_bytes(png_bytes)
+                self.is_dirty = True
+                self._rebuild_thumbnails()
+                self.status.showMessage("Página escaneada e adicionada com sucesso!")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro Fatal (PyMuPDF)", f"A imagem foi extraída do Scanner, mas o motor PDF recusou.\nDetalhes técnicos:\n{e}")
+                self.status.showMessage("Falha na formatação da imagem gerada pelo WIA.")
 
     def _action_delete(self):
         if not self.selected_indices:

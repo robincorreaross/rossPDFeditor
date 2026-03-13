@@ -117,14 +117,17 @@ class PDFEngine:
         if self.doc is None:
             raise ValueError("Nenhum documento aberto.")
 
-        img = fitz.open("png", image_bytes) # Assume PNG mas fitz detecta
-        pdf_bytes = img.convert_to_pdf()
-        img.close()
+        try:
+            img = fitz.open("png", image_bytes) # Assume PNG mas fitz detecta
+            pdf_bytes = img.convert_to_pdf()
+            img.close()
 
-        img_pdf = fitz.open("pdf", pdf_bytes)
-        insert_at = after_index + 1 if after_index >= 0 else self.page_count
-        self.doc.insert_pdf(img_pdf, start_at=insert_at)
-        img_pdf.close()
+            img_pdf = fitz.open("pdf", pdf_bytes)
+            insert_at = after_index + 1 if after_index >= 0 else self.page_count
+            self.doc.insert_pdf(img_pdf, start_at=insert_at)
+            img_pdf.close()
+        except Exception as e:
+            raise RuntimeError(f"Falha ao injetar image_bytes ({len(image_bytes)} bytes) no documento: {e}")
 
     def insert_blank_page(self, after_index: int = -1,
                           width: float = 595, height: float = 842):

@@ -80,6 +80,7 @@ class ScannerEngine:
                 log_step("1. CoInitialize concluído.")
                 
                 try:
+                    nonlocal device_name
                     log_step("2. Instanciando WIA.CommonDialog...")
                     dialog = win32com.client.Dispatch("WIA.CommonDialog")
                     log_step("2. Dialog instanciado.")
@@ -171,6 +172,14 @@ class ScannerEngine:
                         img.save(buffer, format="PNG", optimize=True)
                         png_bytes = buffer.getvalue()
                         log_step("9. Bytes PNG processados com sucesso. Fluxo concluído.")
+                        
+                        try:
+                            debug_path = Path.cwd() / "debug_scanner.png"
+                            with open(debug_path, "wb") as f:
+                                f.write(png_bytes)
+                            log_step(f"DUMP: Imagem bruta salva fisicamente em {debug_path}")
+                        except Exception as e:
+                            log_step(f"DUMP AVISO: não foi possivel salvar png de debug: {e}")
                     elif not error_msg:
                         error_msg = "Usuário cancelou o escaneamento o diálogo nativo."
                         log_step("X. Processo cancelado.")
