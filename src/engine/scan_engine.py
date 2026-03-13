@@ -71,16 +71,46 @@ class ScannerEngine:
                                 break
                         
                         if target_device:
+                            scan_item = None
+                            # Procura o item de digitalização correto (WIA 2.0 geralmente usa Items[1])
                             if target_device.Items.Count > 0:
-                                # Usar ShowTransfer fornece diálogo de progresso nativo do Windows
-                                # Isso evita o hang visual "Aguardando resposta do scanner"
+                                for i in range(1, target_device.Items.Count + 1):
+                                    try:
+                                        item = target_device.Items[i]
+                                        # Verifica se este é o item de flatbed/feeder
+                                        item.Properties("Horizontal Resolution")
+                                        scan_item = item
+                                        break
+                                    except Exception:
+                                        continue
+                                
+                                if not scan_item:
+                                    try:
+                                        scan_item = target_device.Items[1]
+                                    except Exception:
+                                        pass
+                            
+                            if scan_item:
                                 try:
-                                    image_file = dialog.ShowTransfer(target_device.Items[1], "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}", False)
+                                    scan_item.Properties("Horizontal Resolution").Value = 200
+                                    scan_item.Properties("Vertical Resolution").Value = 200
                                 except Exception as e:
-                                    # Se falhar a transferência direta, o fallback abaixo tentará abrir o diálogo
-                                    pass
+                                    pass # Ignora se falhar no DPI, mas tenta transferir mesmo assim
+
+                                try:
+                                    image_file = scan_item.Transfer("{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}")
+                                except Exception as e:
+                                    error_msg = str(e)
+                                    # Se a transferência direta falhar por erro do WIA (ex: tampa aberta, ocupado), capturamos aqui
+                                    if "0x8021001A" in error_msg:
+                                        error_msg = "Scanner ocupado ou em uso por outro programa (0x8021001A)."
+                                    elif "0x80210015" in error_msg:
+                                        error_msg = "Scanner offline ou desconectado (0x80210015)."
+                                    else:
+                                        # Outros erros, talvez o fallback do CommonDialog ainda possa salvar
+                                        pass
                             else:
-                                error_msg = "O scanner não possui itens de digitalização."
+                                error_msg = "O scanner não possui itens de digitalização compatíveis."
                         else:
                             # Se não achou pelo nome salvo, limpa para cair no fallback de diálogo de seleção
                             device_name = None
