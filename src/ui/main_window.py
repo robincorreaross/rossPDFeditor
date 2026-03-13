@@ -170,6 +170,7 @@ class MainWindow(QMainWindow):
     def _setup_window(self):
         self.setWindowTitle(f"{self.APP_TITLE} v{APP_VERSION}")
         self.setMinimumSize(900, 650)
+        self.setMinimumWidth(800)
         self.resize(1100, 750)
         self.setAcceptDrops(True)
 
@@ -205,7 +206,7 @@ class MainWindow(QMainWindow):
         self.act_save.setEnabled(False)
         self.toolbar.addAction(self.act_save)
 
-        self.act_save_as = QAction("📁 Salvar Como", self)
+        self.act_save_as = QAction("📁 Salvar como...", self)
         self.act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
         self.act_save_as.setToolTip("Salvar como... (Ctrl+Shift+S)")
         self.act_save_as.triggered.connect(self._action_save_as)

@@ -58,17 +58,17 @@ QToolBar {
     background-color: #12132a;
     border: none;
     border-bottom: 1px solid #2a2b4a;
-    padding: 6px 12px;
-    spacing: 6px;
+    padding: 2px 8px;
+    spacing: 2px;
 }
 
 QToolButton {
     background-color: transparent;
     color: #b0b0d0;
     border: none;
-    border-radius: 8px;
-    padding: 6px;
-    font-size: 16px;
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 14px;
     font-weight: normal;
 }
 

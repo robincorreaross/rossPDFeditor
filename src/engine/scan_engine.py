@@ -71,15 +71,19 @@ class ScannerEngine:
                                 break
                         
                         if target_device:
-                            # Transferência direta (GUID_CONTAINER_JPEG)
-                            # Geralmente o item 1 é o scanner flatbed
                             if target_device.Items.Count > 0:
-                                item = target_device.Items[1]
-                                image_file = item.Transfer("{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}")
+                                # Usar ShowTransfer fornece diálogo de progresso nativo do Windows
+                                # Isso evita o hang visual "Aguardando resposta do scanner"
+                                try:
+                                    image_file = dialog.ShowTransfer(target_device.Items[1], "{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}", False)
+                                except Exception as e:
+                                    # Se falhar a transferência direta, o fallback abaixo tentará abrir o diálogo
+                                    pass
                             else:
                                 error_msg = "O scanner não possui itens de digitalização."
                         else:
-                            error_msg = f"Não foi possível conectar ao scanner '{device_name}'."
+                            # Se não achou pelo nome salvo, limpa para cair no fallback de diálogo de seleção
+                            device_name = None
                     
                     # Fallback para diálogo se não houver device_name ou se falhou
                     if not image_file and not error_msg:
