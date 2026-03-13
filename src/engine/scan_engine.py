@@ -58,7 +58,21 @@ class ScannerEngine:
             from pathlib import Path
 
             log_file_path = Path.cwd() / "scanner_debug.log"
+            debug_png_path = Path.cwd() / "debug_scanner.png"
             
+            def cleanup_old_files():
+                """Remove arquivos de log ou dumps de dias anteriores"""
+                try:
+                    for p in [log_file_path, debug_png_path]:
+                        if p.exists():
+                            mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime)
+                            if mtime.date() < datetime.date.today():
+                                p.unlink()
+                except Exception:
+                    pass
+
+            cleanup_old_files()
+
             def log_step(msg: str):
                 """Mostra na UI e salva no arquivo local"""
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
