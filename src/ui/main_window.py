@@ -41,6 +41,7 @@ class ScanWorkerSignals(QObject):
     finished = Signal(object, object)  # png_bytes, error_msg
     progress = Signal(str)             # status message
 from src.ui.help_screen import HelpScreen
+from src.ui.viewer_dialog import ViewerDialog
 from src.core.updater import verificar_atualizacao, baixar_e_instalar, abrir_download
 from src.core.license import get_machine_id, validar_licenca
 from version import APP_VERSION, DOWNLOAD_URL
@@ -1115,11 +1116,20 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"Página {index + 1} girada para a direita.")
 
     def _on_page_double_click(self, index: int):
-        """Duplo clique abre o crop da página."""
+        """Duplo clique abre o visualizador de página com transição opcional pro recorte (v1.5.0)."""
+        # Seleciona a página atual visualmente
         self.selected_indices = {index}
         for thumb in self.thumbnails:
             thumb.selected = thumb.page_index in self.selected_indices
-        self._action_crop()
+
+        # Extrai versão de alta resolução para leitura
+        pixmap = self.engine.get_page_pixmap(index, zoom=2.0)
+        
+        # Instancia e mostra o leitor
+        viewer = ViewerDialog(pixmap, index, self)
+        # Se o usuário clicar em '✂️ Recortar' dentro do Viewer, abrimos a ferramenta original
+        viewer.request_crop.connect(self._action_crop)
+        viewer.exec()
 
     # ══════════════════════════════════════════════════════════
     # Estado & Drag/Drop

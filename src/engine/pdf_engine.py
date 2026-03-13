@@ -61,6 +61,18 @@ class PDFEngine:
         pix = page.get_pixmap(matrix=mat, alpha=False)
         return pix.tobytes("png")
 
+    def get_page_pixmap(self, page_index: int, zoom: float = 1.0):
+        """
+        Retorna a página renderizada diretamente como um objeto QPixmap do PySide6.
+        Ideal para visualização em alta resolução.
+        """
+        from PySide6.QtGui import QImage, QPixmap
+        png_bytes = self.render_page(page_index, zoom)
+        
+        image = QImage()
+        image.loadFromData(png_bytes)
+        return QPixmap.fromImage(image)
+
     def get_page_size(self, page_index: int) -> tuple:
         """Retorna (width, height) da página em pontos."""
         page = self.doc[page_index]

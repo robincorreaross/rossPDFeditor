@@ -227,8 +227,10 @@ class PageThumbnail(QFrame):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
+            event.accept()
             self.double_clicked.emit(self.page_index)
-        super().mouseDoubleClickEvent(event)
+        else:
+            super().mouseDoubleClickEvent(event)
 
     # ── Eventos de Drop ───────────────────────────────────────
 
