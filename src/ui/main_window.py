@@ -28,8 +28,10 @@ from PySide6.QtWidgets import (
 )
 
 from src.engine.pdf_engine import PDFEngine
+from src.engine.scan_engine import ScannerEngine
 from src.ui.page_thumbnail import PageThumbnail
 from src.ui.crop_dialog import CropDialog
+from src.ui.settings_dialog import SettingsDialog
 from src.ui.help_screen import HelpScreen
 from src.core.updater import verificar_atualizacao, baixar_e_instalar, abrir_download
 from src.core.license import get_machine_id, validar_licenca
@@ -132,9 +134,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.engine = PDFEngine()
+        self.scanner = ScannerEngine()
         self.thumbnails: list[PageThumbnail] = []
         self.selected_indices: set[int] = set()
         self.is_dirty = False  # Rastreia se há alterações não salvas
+        
+        # Estado de hardware
+        self.scanners_available = False
 
         # Histórico de Undo/Redo (snapshots do PDF em bytes)
         self._undo_stack: list[bytes] = []
@@ -151,6 +157,7 @@ class MainWindow(QMainWindow):
         self._show_drop_zone()
 
         # Verificações em background após a janela estar pronta (igual DocPopular)
+        QTimer.singleShot(500, self._check_scanner_hardware)
         QTimer.singleShot(1000, self._iniciar_verificacao_update)
         QTimer.singleShot(2000, self._verificar_expiracao_licenca)
 
@@ -177,7 +184,7 @@ class MainWindow(QMainWindow):
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(self.toolbar)
 
-        # Ações
+        # ── GRUPO: Arquivo ──
         self.act_open = QAction("📂 Abrir", self)
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_open.setToolTip("Abrir arquivo PDF (Ctrl+O)")
@@ -197,7 +204,7 @@ class MainWindow(QMainWindow):
         self.act_save.setEnabled(False)
         self.toolbar.addAction(self.act_save)
 
-        self.act_save_as = QAction("💾 Salvar Como", self)
+        self.act_save_as = QAction("📁 Salvar Como", self)
         self.act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
         self.act_save_as.setToolTip("Salvar como... (Ctrl+Shift+S)")
         self.act_save_as.triggered.connect(self._action_save_as)
@@ -206,13 +213,21 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
 
+        # ── GRUPO: Digitalizar ──
+        self.act_scan = QAction("📷 Escanear", self)
+        self.act_scan.setToolTip("Escanear Página (Scanner via WIA)")
+        self.act_scan.triggered.connect(self._action_scan)
+        self.act_scan.setEnabled(False) # Inicia desabilitado na DropZone
+        self.toolbar.addAction(self.act_scan)
+
+        # ── GRUPO: Páginas ──
         self.act_add_pages = QAction("➕ Adicionar", self)
         self.act_add_pages.setToolTip("Adicionar páginas (PDF ou imagens)")
         self.act_add_pages.triggered.connect(self._action_add_pages)
         self.act_add_pages.setEnabled(False)
         self.toolbar.addAction(self.act_add_pages)
 
-        self.act_add_blank = QAction("📃 Página Branca", self)
+        self.act_add_blank = QAction("📃 Em Branco", self)
         self.act_add_blank.setToolTip("Inserir página em branco")
         self.act_add_blank.triggered.connect(self._action_add_blank)
         self.act_add_blank.setEnabled(False)
@@ -220,6 +235,7 @@ class MainWindow(QMainWindow):
 
         self.toolbar.addSeparator()
 
+        # ── GRUPO: Edição ──
         self.act_delete = QAction("🗑️ Excluir", self)
         self.act_delete.setShortcut(QKeySequence.Delete)
         self.act_delete.setToolTip("Excluir páginas selecionadas (Del)")
@@ -233,18 +249,32 @@ class MainWindow(QMainWindow):
         self.act_crop.setEnabled(False)
         self.toolbar.addAction(self.act_crop)
 
+        # Ações de Atalho (Ocultas na toolbar mas necessárias para o código não quebrar)
+        self.act_rotate_left = QAction("Girar Esq", self)
+        self.act_rotate_left.setShortcut(QKeySequence("Ctrl+Left"))
+        self.act_rotate_left.triggered.connect(self._action_rotate_left)
+        self.act_rotate_left.setEnabled(False)
+        self.addAction(self.act_rotate_left)
+
+        self.act_rotate_right = QAction("Girar Dir", self)
+        self.act_rotate_right.setShortcut(QKeySequence("Ctrl+Right"))
+        self.act_rotate_right.triggered.connect(self._action_rotate_right)
+        self.act_rotate_right.setEnabled(False)
+        self.addAction(self.act_rotate_right)
+
         self.toolbar.addSeparator()
 
+        # ── GRUPO: Histórico ──
         self.act_undo = QAction("↩️ Desfazer", self)
         self.act_undo.setShortcut(QKeySequence.Undo)
-        self.act_undo.setToolTip("Desfazer última ação (Ctrl+Z)")
+        self.act_undo.setToolTip("Desfazer última alteração (Ctrl+Z)")
         self.act_undo.triggered.connect(self._action_undo)
         self.act_undo.setEnabled(False)
         self.toolbar.addAction(self.act_undo)
 
         self.act_redo = QAction("↪️ Refazer", self)
         self.act_redo.setShortcut(QKeySequence.Redo)
-        self.act_redo.setToolTip("Refazer ação desfeita (Ctrl+Y)")
+        self.act_redo.setToolTip("Refazer última alteração (Ctrl+Y)")
         self.act_redo.triggered.connect(self._action_redo)
         self.act_redo.setEnabled(False)
         self.toolbar.addAction(self.act_redo)
@@ -255,6 +285,11 @@ class MainWindow(QMainWindow):
         self.act_help.setToolTip("Central de Ajuda e Suporte")
         self.act_help.triggered.connect(self._action_help)
         self.toolbar.addAction(self.act_help)
+
+        self.act_settings = QAction("⚙️", self)
+        self.act_settings.setToolTip("Configurações do Aplicativo")
+        self.act_settings.triggered.connect(self._action_settings)
+        self.toolbar.addAction(self.act_settings)
 
     def _setup_central(self):
         """Cria o widget central com scroll area para os thumbnails."""
@@ -398,6 +433,31 @@ class MainWindow(QMainWindow):
         """Abre a Central de Ajuda e Suporte."""
         dialog = HelpScreen(self)
         dialog.exec()
+
+    def _action_settings(self):
+        """Abre o diálogo de configurações."""
+        dialog = SettingsDialog(self)
+        if dialog.exec():
+            # Se salvou algo, recheca hardware
+            self._check_scanner_hardware()
+
+    def _check_scanner_hardware(self):
+        """Verifica se há scanners físicos e atualiza o botão."""
+        try:
+            scanners = self.scanner.list_scanners()
+            self.scanners_available = len(scanners) > 0
+            
+            # Atualiza o botão baseado no estado atual
+            if not self.scanners_available:
+                self.act_scan.setEnabled(False)
+                self.act_scan.setToolTip("Nenhum Scanner Detectado no Sistema")
+            else:
+                # Só habilita se tiver documento aberto
+                has_doc = self.engine.doc is not None
+                self.act_scan.setEnabled(has_doc)
+                self.act_scan.setToolTip("Escanear Página (Scanner via WIA)")
+        except Exception:
+            self.scanners_available = False
 
     # ── Sistema de update ────────────────────────────────────────────────────────
 
@@ -778,6 +838,44 @@ class MainWindow(QMainWindow):
             f"Total: {self.engine.page_count} página(s)"
         )
 
+    def _action_scan(self):
+        """Dispara o processo de escaneamento via WIA."""
+        if not self.act_scan.isEnabled():
+            return
+
+        # Busca scanner padrão nas configurações
+        scanner_name = self._settings.value("scanner_name", None)
+        
+        self.status.showMessage("Aguardando resposta do scanner...")
+        self.act_scan.setEnabled(False)
+        
+        def on_scan_finished(png_bytes, error):
+            def handle_result():
+                self.act_scan.setEnabled(True)
+                
+                if error:
+                    if "cancelou" in error.lower():
+                        self.status.showMessage("Escaneamento cancelado pelo usuário.")
+                    elif "0x80210015" in error or "Nenhum Scanner" in error:
+                        QMessageBox.information(
+                            self, "Scanner", 
+                            "Nenhum Scanner Detectado.\n\nVá em Configurações (⚙️) para selecionar seu dispositivo."
+                        )
+                        self.status.showMessage("Nenhum scanner disponível.")
+                    else:
+                        QMessageBox.warning(self, "Scanner", f"Erro no Scanner:\n{error}")
+                        self.status.showMessage("Falha ao escanear página.")
+                elif png_bytes:
+                    self._push_snapshot()
+                    self.engine.insert_image_bytes(png_bytes)
+                    self.is_dirty = True
+                    self._rebuild_thumbnails()
+                    self.status.showMessage("Página escaneada e adicionada com sucesso!")
+                
+            QTimer.singleShot(0, handle_result)
+
+        self.scanner.scan_with_dialog(on_scan_finished, device_name=scanner_name)
+
     def _action_delete(self):
         if not self.selected_indices:
             self.status.showMessage("Selecione uma ou mais páginas para excluir.")
@@ -835,6 +933,26 @@ class MainWindow(QMainWindow):
                     f"Página {idx + 1} recortada com sucesso!"
                 )
 
+    def _action_rotate_left(self):
+        """Gira as páginas selecionadas 90° para a esquerda (anti-horário)."""
+        if not self.selected_indices:
+            return
+        self._push_snapshot()
+        self.engine.rotate_pages(list(self.selected_indices), -90)
+        self.is_dirty = True
+        self._rebuild_thumbnails()
+        self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a esquerda.")
+
+    def _action_rotate_right(self):
+        """Gira as páginas selecionadas 90° para a direita (horário)."""
+        if not self.selected_indices:
+            return
+        self._push_snapshot()
+        self.engine.rotate_pages(list(self.selected_indices), 90)
+        self.is_dirty = True
+        self._rebuild_thumbnails()
+        self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a direita.")
+
     # ══════════════════════════════════════════════════════════
     # Thumbnails
     # ══════════════════════════════════════════════════════════
@@ -867,6 +985,8 @@ class MainWindow(QMainWindow):
             thumb.clicked.connect(self._on_page_clicked)
             thumb.delete_requested.connect(self._on_page_delete)
             thumb.duplicate_requested.connect(self._on_page_duplicate)
+            thumb.rotate_left_requested.connect(self._on_page_rotate_left)
+            thumb.rotate_right_requested.connect(self._on_page_rotate_right)
             thumb.double_clicked.connect(self._on_page_double_click)
             thumb.drop_received.connect(self._on_page_drop)
 
@@ -951,6 +1071,22 @@ class MainWindow(QMainWindow):
             f"Página {from_index + 1} trocada com Página {to_index + 1}"
         )
 
+    def _on_page_rotate_left(self, index: int):
+        """Gira uma página específica 90° para a esquerda (via thumbnail)."""
+        self._push_snapshot()
+        self.engine.rotate_page(index, -90)
+        self.is_dirty = True
+        self._rebuild_thumbnails()
+        self.status.showMessage(f"Página {index + 1} girada para a esquerda.")
+
+    def _on_page_rotate_right(self, index: int):
+        """Gira uma página específica 90° para a direita (via thumbnail)."""
+        self._push_snapshot()
+        self.engine.rotate_page(index, 90)
+        self.is_dirty = True
+        self._rebuild_thumbnails()
+        self.status.showMessage(f"Página {index + 1} girada para a direita.")
+
     def _on_page_double_click(self, index: int):
         """Duplo clique abre o crop da página."""
         self.selected_indices = {index}
@@ -966,6 +1102,10 @@ class MainWindow(QMainWindow):
         self.act_new.setEnabled(enabled)
         self.act_save.setEnabled(enabled)
         self.act_save_as.setEnabled(enabled)
+        
+        # Regra refinada v1.3.2: Habilita apenas se tiver documento E hardware
+        self.act_scan.setEnabled(enabled and self.scanners_available)
+        
         self.act_add_pages.setEnabled(enabled)
         self.act_add_blank.setEnabled(enabled)
         self.act_undo.setEnabled(len(self._undo_stack) > 0)
@@ -975,6 +1115,8 @@ class MainWindow(QMainWindow):
     def _update_actions(self):
         has_selection = len(self.selected_indices) > 0
         self.act_delete.setEnabled(has_selection)
+        self.act_rotate_left.setEnabled(has_selection)
+        self.act_rotate_right.setEnabled(has_selection)
         self.act_crop.setEnabled(len(self.selected_indices) == 1)
         self.act_undo.setEnabled(len(self._undo_stack) > 0)
         self.act_redo.setEnabled(len(self._redo_stack) > 0)

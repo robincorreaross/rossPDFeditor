@@ -12,6 +12,7 @@ Usa PyMuPDF (fitz) para manipulação rápida e precisa de PDFs:
 
 import fitz  # PyMuPDF
 import os
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -111,6 +112,20 @@ class PDFEngine:
         self.doc.insert_pdf(img_pdf, start_at=insert_at)
         img_pdf.close()
 
+    def insert_image_bytes(self, image_bytes: bytes, after_index: int = -1):
+        """Insere imagem vinda de bytes (PNG/JPG) como nova página."""
+        if self.doc is None:
+            raise ValueError("Nenhum documento aberto.")
+
+        img = fitz.open("png", image_bytes) # Assume PNG mas fitz detecta
+        pdf_bytes = img.convert_to_pdf()
+        img.close()
+
+        img_pdf = fitz.open("pdf", pdf_bytes)
+        insert_at = after_index + 1 if after_index >= 0 else self.page_count
+        self.doc.insert_pdf(img_pdf, start_at=insert_at)
+        img_pdf.close()
+
     def insert_blank_page(self, after_index: int = -1,
                           width: float = 595, height: float = 842):
         """Insere uma página em branco (A4 por padrão) após after_index."""
@@ -126,14 +141,38 @@ class PDFEngine:
         """
         Aplica um recorte REAL na página, alterando o CropBox.
         Coordenadas em pontos (1 ponto = 1/72 polegada).
-        (x0, y0) = canto superior esquerdo do recorte
-        (x1, y1) = canto inferior direito do recorte
+        Lida com páginas rotacionadas convertendo as coordenadas.
         """
         if self.doc is None:
             raise ValueError("Nenhum documento aberto.")
         page = self.doc[page_index]
-        crop_rect = fitz.Rect(x0, y0, x1, y1)
-        page.set_cropbox(crop_rect)
+        
+        # O CropDialog envia coordenadas baseadas na visualização ATUAL (com rotação).
+        # set_cropbox exige coordenadas relativas à página ORIGINAL (sem rotação).
+        # Usamos a derotation_matrix para mapear de volta.
+        rect_view = fitz.Rect(x0, y0, x1, y1)
+        rect_original = rect_view * page.derotation_matrix
+        
+        page.set_cropbox(rect_original)
+
+    # ── Rotacionar Páginas ─────────────────────────────────────
+
+    def rotate_page(self, page_index: int, angle: int):
+        """
+        Rotaciona uma página pelo ângulo especificado.
+        `angle` deve ser múltiplo de 90 (+90 = horário, -90 = anti-horário).
+        A rotação é acumulada com a rotação atual da página.
+        """
+        if self.doc is None:
+            raise ValueError("Nenhum documento aberto.")
+        page = self.doc[page_index]
+        current = page.rotation
+        page.set_rotation((current + angle) % 360)
+
+    def rotate_pages(self, indices: list[int], angle: int):
+        """Rotaciona múltiplas páginas pelo mesmo ângulo."""
+        for idx in indices:
+            self.rotate_page(idx, angle)
 
     # ── Reordenar Páginas ────────────────────────────────────────
 
@@ -192,35 +231,50 @@ class PDFEngine:
                         os.path.abspath(path) == os.path.abspath(self.file_path)))
 
         if is_overwrite and self.file_path:
-            temp_path = str(save_path) + ".tmp"
+            # Gerar um nome temporário único para evitar conflitos (ex: retentativas após falha)
+            target_path = os.path.abspath(save_path)
+            temp_path = target_path + f".{uuid.uuid4().hex[:8]}.tmp"
+            
             try:
-                # 1. Salva em um arquivo temporário
+                # 1. Salva em um arquivo temporário novo
                 self.doc.save(temp_path, garbage=4, deflate=True)
-                # 2. Fecha o documento atual para liberar o arquivo original
+                
+                # Guardamos o caminho do documento atual antes de fechar (pode ser um .tmp anterior)
+                old_doc_path = self.doc.name
+                
+                # 2. Fecha o documento atual para liberar os arquivos
                 self.doc.close()
                 
-                # 3. Substitui o original pelo temporário
+                # 3. Tenta substituir o original pelo novo temporário
                 try:
-                    if os.path.exists(save_path):
-                        os.remove(save_path)
-                    os.rename(temp_path, save_path)
+                    if os.path.exists(target_path):
+                        os.remove(target_path)
+                    os.rename(temp_path, target_path)
                     
-                    # 4. Reabre o documento final
-                    self.doc = fitz.open(save_path)
-                    self.file_path = save_path
+                    # 4. Sucesso! Reabre no local correto
+                    self.doc = fitz.open(target_path)
+                    self.file_path = target_path
+                    
+                    # 5. Limpeza: Se estávamos em um fallback (.tmp), remove o arquivo antigo
+                    if ".tmp" in old_doc_path and os.path.exists(old_doc_path):
+                        try:
+                            os.remove(old_doc_path)
+                        except: pass
+                        
                 except Exception as rename_err:
-                    # Se falhar o rename (ex: arquivo em uso), tentamos 
-                    # recuperar reabrindo do documento temporário para não perder o trabalho
+                    # Se falhar o rename (arquivo ainda bloqueado), voltamos para o NOVO temp
                     self.doc = fitz.open(temp_path)
                     raise OSError(
-                        f"O arquivo original está sendo usado por outro programa.\n"
-                        f"Suas alterações estão salvas temporariamente em:\n{temp_path}\n\n"
-                        f"Dica: Feche o outro programa ou use 'Salvar Como'."
+                        f"O arquivo original ainda está sendo usado por outro programa.\n"
+                        f"Suas alterações atuais foram salvas em:\n{temp_path}\n\n"
+                        f"Feche o outro programa e tente salvar novamente no botão 'Salvar'."
                     ) from rename_err
                     
             except Exception as e:
-                # Se ainda estiver aberto, não faz nada. Se fechou no passo 2, 
-                # o bloco interno de rename_err já tentou reabrir.
+                # Erro na gravação do próprio temp ou erro inesperado
+                if "must be incremental" in str(e):
+                    # Fallback extremo caso o PyMuPDF se perca
+                    raise OSError("Erro interno de salvamento. Tente fechar e abrir o arquivo novamente ou use 'Salvar Como'.")
                 raise e
         else:
             # Salvando em um novo local (Save As)

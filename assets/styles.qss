@@ -67,9 +67,9 @@ QToolButton {
     color: #b0b0d0;
     border: none;
     border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
-    font-weight: 500;
+    padding: 6px;
+    font-size: 16px;
+    font-weight: normal;
 }
 
 QToolButton:hover {

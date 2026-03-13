@@ -16,6 +16,54 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QLabel, QPushButton, QGraphicsOpacityEffect, QApplication
 )
 
+class HoverButton(QPushButton):
+    """Botão customizado flutuante que desenha seu próprio fundo e ícone
+    contornando bugs de renderização CSS com alpha em fontes unicode do Qt."""
+    def __init__(self, text, text_color, font_size, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(40, 40)
+        self._text = text
+        self._text_color = QColor(text_color)
+        self._font_size = font_size
+        self._hovered = False
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+
+        # Fundo circular, mais escuro no hover (0.85) vs normal (0.65)
+        bg_alpha = 216 if self._hovered else 165
+        painter.setBrush(QColor(0, 0, 0, bg_alpha))
+        painter.setPen(Qt.NoPen)
+        r = self.rect()
+        painter.drawEllipse(r)
+
+        # Texto (ícone) desenhado manualmente para forçar legibilidade e alinhamento
+        painter.setPen(self._text_color)
+        font = painter.font()
+        font.setPixelSize(self._font_size)
+        font.setBold(True)
+        painter.setFont(font)
+        
+        # O textRect permite afinação, empurramos 1-2 px pra cima ou lado pro centro ideal
+        if self._text == "+": # O "+" é teimoso
+            r.translate(0, -2)
+        elif self._text in ("↺", "↻"): # Setas um pouquinho maiores descem
+            r.translate(0, -2)
+            
+        painter.drawText(r, Qt.AlignCenter, self._text)
+
 
 class PageThumbnail(QFrame):
     """Card visual que representa uma página do PDF."""
@@ -23,6 +71,8 @@ class PageThumbnail(QFrame):
     clicked = Signal(int)           # índice da página
     delete_requested = Signal(int)  # índice da página
     duplicate_requested = Signal(int) # índice da página
+    rotate_left_requested = Signal(int)  # índice da página
+    rotate_right_requested = Signal(int) # índice da página
     crop_requested = Signal(int)    # índice da página
     double_clicked = Signal(int)    # índice da página
     drag_started = Signal(int)      # índice da página sendo arrastada
@@ -66,52 +116,35 @@ class PageThumbnail(QFrame):
         layout.addWidget(self.page_label)
 
         # ── Botão Fechar (canto superior direito) ────────────
-        self.btn_delete = QPushButton("✕")
-        self.btn_delete.setParent(self)
-        self.btn_delete.setFixedSize(26, 26)
+        self.btn_delete = HoverButton("✕", "#ff1744", 22, self)
         self.btn_delete.setToolTip("Excluir Página")
-        self.btn_delete.setStyleSheet("""
-            QPushButton {
-                background-color: #e53935;
-                color: white;
-                border: none;
-                border-radius: 13px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #ff5252;
-            }
-        """)
-        self.btn_delete.move(self.width() - 30, 4)
         self.btn_delete.hide()
-        self.btn_delete.clicked.connect(
-            lambda: self.delete_requested.emit(self.page_index)
-        )
+        self.btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.page_index))
 
         # ── Botão Duplicar (canto superior esquerdo) ──────────
-        self.btn_duplicate = QPushButton("+")
-        self.btn_duplicate.setParent(self)
-        self.btn_duplicate.setFixedSize(26, 26)
+        self.btn_duplicate = HoverButton("+", "#00e676", 32, self)
         self.btn_duplicate.setToolTip("Duplicar Página")
-        self.btn_duplicate.setStyleSheet("""
-            QPushButton {
-                background-color: #2e7d32;
-                color: white;
-                border: none;
-                border-radius: 13px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #388e3c;
-            }
-        """)
-        self.btn_duplicate.move(4, 4)
         self.btn_duplicate.hide()
-        self.btn_duplicate.clicked.connect(
-            lambda: self.duplicate_requested.emit(self.page_index)
-        )
+        self.btn_duplicate.clicked.connect(lambda: self.duplicate_requested.emit(self.page_index))
+
+        # ── Botão Girar Esq (canto inferior esquerdo) ──────────
+        self.btn_rotate_left = HoverButton("↺", "#40c4ff", 28, self)
+        self.btn_rotate_left.setToolTip("Girar para Esquerda")
+        self.btn_rotate_left.hide()
+        self.btn_rotate_left.clicked.connect(lambda: self.rotate_left_requested.emit(self.page_index))
+
+        # ── Botão Girar Dir (canto inferior direito) ──────────
+        self.btn_rotate_right = HoverButton("↻", "#40c4ff", 28, self)
+        self.btn_rotate_right.setToolTip("Girar para Direita")
+        self.btn_rotate_right.hide()
+        self.btn_rotate_right.clicked.connect(lambda: self.rotate_right_requested.emit(self.page_index))
+
+        # Posicionamento inicial
+        self.btn_delete.move(self.width() - 40, 4)
+        self.btn_duplicate.move(4, 4)
+        self.btn_rotate_left.move(4, self.THUMB_HEIGHT - 30)
+        self.btn_rotate_right.move(self.THUMB_WIDTH - 22, self.THUMB_HEIGHT - 30)
+
 
         # Carregar imagem
         self._set_thumbnail(png_data)
@@ -248,14 +281,20 @@ class PageThumbnail(QFrame):
     def enterEvent(self, event):
         self.btn_delete.show()
         self.btn_duplicate.show()
+        self.btn_rotate_left.show()
+        self.btn_rotate_right.show()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         self.btn_delete.hide()
         self.btn_duplicate.hide()
+        self.btn_rotate_left.hide()
+        self.btn_rotate_right.hide()
         super().leaveEvent(event)
 
     def resizeEvent(self, event):
-        self.btn_delete.move(self.width() - 30, 4)
+        self.btn_delete.move(self.width() - 40, 4)
         self.btn_duplicate.move(4, 4)
+        self.btn_rotate_left.move(4, self.height() - 44)
+        self.btn_rotate_right.move(self.width() - 40, self.height() - 44)
         super().resizeEvent(event)
