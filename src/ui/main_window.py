@@ -139,8 +139,9 @@ class MainWindow(QMainWindow):
         self.selected_indices: set[int] = set()
         self.is_dirty = False  # Rastreia se há alterações não salvas
         
-        # Estado de hardware
+        # Estado de hardware e atualização
         self.scanners_available = False
+        self._is_updating = False
 
         # Histórico de Undo/Redo (snapshots do PDF em bytes)
         self._undo_stack: list[bytes] = []
@@ -565,6 +566,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self, lambda: [
                 status_lbl.setText("✅ Pronto! Reiniciando em 2s..."),
                 status_lbl.setStyleSheet("color: #66BB6A; font-weight: bold;"),
+                setattr(self, '_is_updating', True),
                 QTimer.singleShot(2000, QApplication.quit)
             ])
 
@@ -1252,6 +1254,12 @@ class MainWindow(QMainWindow):
                 self.pages_layout.addWidget(thumb, row, col, Qt.AlignCenter)
 
     def closeEvent(self, event):
+        # Se for atualização automática, fechar direto
+        if self._is_updating:
+            self.engine.close()
+            event.accept()
+            return
+
         # 1. Primeiro lidar com salvamento se necessário
         if not self._maybe_save_changes():
             event.ignore()
