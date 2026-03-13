@@ -877,7 +877,11 @@ class MainWindow(QMainWindow):
                 
             QTimer.singleShot(0, handle_result)
 
-        self.scanner.scan_with_dialog(on_scan_finished, device_name=scanner_name)
+        def on_scan_status_update(msg):
+            # QTimer usado para injetar atualização de thread secundária na UI Thread de modo seguro
+            QTimer.singleShot(0, lambda: self.status.showMessage(f"Scanner [{msg}]"))
+
+        self.scanner.scan_with_dialog(on_scan_finished, on_scan_status_update, device_name=scanner_name)
 
     def _action_delete(self):
         if not self.selected_indices:
