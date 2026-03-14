@@ -6,7 +6,7 @@ impressão nativa e botão rápido para recorte.
 
 import math
 from PySide6.QtCore import Qt, Signal, QPointF
-from PySide6.QtGui import QPixmap, QPainter, QTransform
+from PySide6.QtGui import QPixmap, QPainter, QTransform, QPageLayout
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QMessageBox
@@ -184,9 +184,9 @@ class ViewerDialog(QDialog):
         
         # Define orientação automática baseada no pixmap
         if self.original_pixmap.width() > self.original_pixmap.height():
-            self.printer.setPageOrientation(QPrinter.Landscape)
+            self.printer.setPageOrientation(QPageLayout.Orientation.Landscape)
         else:
-            self.printer.setPageOrientation(QPrinter.Portrait)
+            self.printer.setPageOrientation(QPageLayout.Orientation.Portrait)
 
         # Cria e executa o diálogo de PREVIEW
         preview = QPrintPreviewDialog(self.printer, self)
