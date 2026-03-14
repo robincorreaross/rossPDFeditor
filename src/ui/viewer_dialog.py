@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QMessageBox
 )
-from PySide6.QtPrintSupport import QPrinter, QPrintDialog
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrintPreviewDialog
+from PySide6.QtCore import Qt, Signal, QPointF, QRectF
 
 class CustomGraphicsView(QGraphicsView):
     """
@@ -174,29 +175,48 @@ class ViewerDialog(QDialog):
         self.lbl_zoom.setText(f"{percent}%")
             
     def _action_print(self):
-        """Dispara diálogo de impressão do Windows para esta folha usando QtPrintSupport."""
+        """Dispara diálogo de PREVIEW de impressão (v1.6.1) para esta folha."""
         if self.original_pixmap.isNull():
             return
             
-        printer = QPrinter(QPrinter.HighResolution)
+        # Cria a impressora com alta resolução
+        self.printer = QPrinter(QPrinter.HighResolution)
         
-        dialog = QPrintDialog(printer, self)
-        if dialog.exec() == QPrintDialog.Accepted:
-            try:
-                painter = QPainter(printer)
-                rect = painter.viewport()
-                size = self.original_pixmap.size()
-                size.scale(rect.size(), Qt.KeepAspectRatio)
-                
-                painter.setViewport(rect.x(), rect.y(), size.width(), size.height())
-                painter.setWindow(self.original_pixmap.rect())
-                
-                painter.drawPixmap(0, 0, self.original_pixmap)
-                painter.end()
-                
-                QMessageBox.information(self, "Impressão", "Comando de impressão enviado com sucesso.")
-            except Exception as e:
-                QMessageBox.critical(self, "Erro de Impressão", f"Falha ao comunicar com a impressora:\n{e}")
+        # Define orientação automática baseada no pixmap
+        if self.original_pixmap.width() > self.original_pixmap.height():
+            self.printer.setPageOrientation(QPrinter.Landscape)
+        else:
+            self.printer.setPageOrientation(QPrinter.Portrait)
+
+        # Cria e executa o diálogo de PREVIEW
+        preview = QPrintPreviewDialog(self.printer, self)
+        preview.setWindowFlags(preview.windowFlags() | Qt.WindowMaximizeButtonHint)
+        preview.paintRequested.connect(self._render_print_preview)
+        preview.exec()
+
+    def _render_print_preview(self, printer: QPrinter):
+        """Callback chamado pelo PreviewDialog para desenhar na folha virtual."""
+        painter = QPainter(printer)
+        
+        # 1. Obtém a área física da página em pixels do dispositivo
+        page_rect = printer.pageRect(QPrinter.Unit.DevicePixel)
+        
+        # 2. Obtém o tamanho da imagem original
+        pix_size = self.original_pixmap.size()
+        
+        # 3. Calcula a escala mantendo a proporção (Aspect Ratio)
+        # Queremos que a imagem preencha a página respeitando as margens
+        scaled_size = pix_size.scaled(page_rect.size().toSize(), Qt.KeepAspectRatio)
+        
+        # 4. Calcula as coordenadas para Centralizar
+        x = page_rect.left() + (page_rect.width() - scaled_size.width()) / 2
+        y = page_rect.top() + (page_rect.height() - scaled_size.height()) / 2
+        
+        target_rect = QRectF(x, y, scaled_size.width(), scaled_size.height())
+        
+        # Configura o viewport e window para garantir escala 1:1 nos dispositivos
+        painter.drawPixmap(target_rect, self.original_pixmap, QRectF(self.original_pixmap.rect()))
+        painter.end()
 
     def _action_crop(self):
         """Avisa a tela principal para transicionar para a ferramenta de recorte."""

@@ -3,14 +3,14 @@
 [Setup]
 AppId={{D1A2B3C4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}
 AppName=Ross PDF Editor
-AppVersion=1.4.9
-AppVerName=Ross PDF Editor v1.4.9
+AppVersion=1.6.0
+AppVerName=Ross PDF Editor v1.6.0
 AppPublisher=Ross Sistemas
 DefaultDirName={autopf}\RossPDFEditor
 DefaultGroupName=Ross PDF Editor
 DisableProgramGroupPage=yes
 OutputDir=installer
-OutputBaseFilename=RossPDFEditor_Setup_v1.4.9
+OutputBaseFilename=RossPDFEditor_Setup_v1.6.0
 WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
