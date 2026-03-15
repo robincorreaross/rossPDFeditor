@@ -3,7 +3,7 @@ Ross PDF Editor - Version & Supabase Configuration.
 """
 
 # Versão atual do aplicativo (Semântica: MAJOR.MINOR.PATCH)
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.7.0"
 
 # Configurações do Supabase para Licenciamento
 SUPABASE_URL = "https://iyyfyhefllmlhauezhur.supabase.co"

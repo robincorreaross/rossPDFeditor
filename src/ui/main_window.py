@@ -783,7 +783,7 @@ class MainWindow(QMainWindow):
                 self.engine.save()
                 self.is_dirty = False
                 self.status.showMessage("Documento salvo com sucesso!")
-                QMessageBox.information(self, "Sucesso", "Documento Salvo com Sucesso!")
+                self._post_save_sequence()
             except Exception as e:
                 QMessageBox.critical(
                     self, "Erro ao Salvar", str(e)
@@ -807,11 +807,26 @@ class MainWindow(QMainWindow):
                     f"{self.APP_TITLE} — {Path(path).name}"
                 )
                 self.status.showMessage(f"Salvo: {Path(path).name}")
-                QMessageBox.information(self, "Sucesso", "Documento Salvo com Sucesso!")
+                self._post_save_sequence()
             except Exception as e:
                 QMessageBox.critical(
                     self, "Erro ao Salvar", str(e)
                 )
+
+    def _post_save_sequence(self):
+        """Executa as ações de pós-salvamento, perguntando sobre novo documento."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Sucesso")
+        msg.setText("Documento Salvo com Sucesso!\n\nDeseja iniciar um novo documento?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setButtonText(QMessageBox.Yes, "Sim")
+        msg.setButtonText(QMessageBox.No, "Não")
+        msg.setDefaultButton(QMessageBox.No)
+        msg.setIcon(QMessageBox.Information)
+        
+        reply = msg.exec()
+        if reply == QMessageBox.Yes:
+            self._action_new()
 
     def _action_add_pages(self):
         paths, _ = QFileDialog.getOpenFileNames(
