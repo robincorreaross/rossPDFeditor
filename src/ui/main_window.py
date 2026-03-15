@@ -318,19 +318,19 @@ class MainWindow(QMainWindow):
         # Banner de atualização (oculto inicialmente)
         self._update_banner = QFrame(self.central_widget)
         self._update_banner.setObjectName("updateBanner")
-        self._update_banner.setFixedHeight(42)
-        self._update_banner.setStyleSheet("QFrame#updateBanner { background-color: #0D2B0D; border: none; }")
+        self._update_banner.setFixedHeight(48)
+        self._update_banner.setStyleSheet("QFrame#updateBanner { background-color: #0D2B0D; border-bottom: 1px solid #1B3F1B; }")
         self._update_banner_layout = QHBoxLayout(self._update_banner)
-        self._update_banner_layout.setContentsMargins(20, 0, 20, 0)
+        self._update_banner_layout.setContentsMargins(15, 0, 15, 0)
         
         self._lbl_update_msg = QLabel("")
         self._lbl_update_msg.setStyleSheet("color: white; font-weight: bold; font-size: 13px; border: none; background: transparent;")
         self._update_banner_layout.addWidget(self._lbl_update_msg)
         
-        self._update_banner_layout.addStretch()
+        self._update_banner_layout.addSpacing(15)
         
         self._btn_download_update = QPushButton("⬇️  Baixar agora")
-        self._btn_download_update.setFixedSize(130, 28)
+        self._btn_download_update.setFixedSize(150, 34)
         self._btn_download_update.setCursor(Qt.PointingHandCursor)
         self._btn_download_update.setStyleSheet("""
             QPushButton {
@@ -345,6 +345,8 @@ class MainWindow(QMainWindow):
         """)
         self._btn_download_update.clicked.connect(self._abrir_download)
         self._update_banner_layout.addWidget(self._btn_download_update)
+        
+        self._update_banner_layout.addStretch()
         
         self._btn_close_update = QPushButton("✕")
         self._btn_close_update.setFixedSize(28, 28)
@@ -366,17 +368,19 @@ class MainWindow(QMainWindow):
         # Banner de licença (oculto inicialmente)
         self._license_banner = QFrame(self.central_widget)
         self._license_banner.setObjectName("licenseBanner")
-        self._license_banner.setFixedHeight(45)
+        self._license_banner.setFixedHeight(48)
         self._license_banner.setStyleSheet("QFrame#licenseBanner { background-color: #D84315; border-bottom: 1px solid #BF360C; }") 
         self._license_banner_layout = QHBoxLayout(self._license_banner)
-        self._license_banner_layout.setContentsMargins(20, 0, 20, 0)
+        self._license_banner_layout.setContentsMargins(15, 0, 15, 0)
         
         self._lbl_license_msg = QLabel("")
         self._lbl_license_msg.setStyleSheet("color: white; font-weight: bold; font-size: 13px; border: none; background: transparent;")
         self._license_banner_layout.addWidget(self._lbl_license_msg)
         
+        self._license_banner_layout.addSpacing(15)
+        
         self._btn_renovar = QPushButton("💎  Renovar Agora")
-        self._btn_renovar.setFixedSize(140, 28)
+        self._btn_renovar.setFixedSize(170, 34)
         self._btn_renovar.setCursor(Qt.PointingHandCursor)
         self._btn_renovar.setStyleSheet("""
             QPushButton {
@@ -493,9 +497,8 @@ class MainWindow(QMainWindow):
         self._update_zip_url = zip_url
         
         emoji = "🚨" if obrigatoria else "🟢"
-        tipo = "OBRIGATÓRIA" if obrigatoria else "disponível"
-        desc = changelog[0] if changelog else ""
-        texto = f"{emoji}  Atualização {tipo}: versão {nova_versao}   —   {desc}"
+        tipo = "OBRIGATÓRIA" if obrigatoria else "Disponível"
+        texto = f"{emoji}  Atualização {tipo}: Versão {nova_versao}"
 
         self._lbl_update_msg.setText(texto)
         self._lbl_update_msg.setStyleSheet(f"color: {'#FFCDD2' if obrigatoria else '#A5D6A7'}; font-weight: bold; font-size: 13px; border: none; background: transparent;")
