@@ -1,12 +1,13 @@
 {
-  "version": "1.7.4",
-  "release_date": "2026-03-11",
+  "version": "1.8.0",
+  "release_date": "2026-03-19",
   "download_zip_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest/download/RossPDFEditor.zip",
   "download_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest",
   "changelog": [
-    "Versão inicial com suporte a Drag & Drop",
-    "Correção de reordenação (Swap de páginas)",
-    "Implementação de Auto-Update Ross"
+    "Correção definitiva do bug de recorte aninhado (Crop of Crop)",
+    "Otimização de performance com cache de miniaturas (Thumbs)",
+    "Melhoria na velocidade de salvamento (Nível de garbage otimizado)",
+    "Correção de Swap e Reordenação de páginas com cache inteligente"
   ],
-  "mandatory": false
+  "mandatory": true
 }

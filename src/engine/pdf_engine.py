@@ -162,11 +162,20 @@ class PDFEngine:
             raise ValueError("Nenhum documento aberto.")
         page = self.doc[page_index]
         
-        # O CropDialog envia coordenadas baseadas na visualização ATUAL (com rotação).
-        # set_cropbox exige coordenadas relativas à página ORIGINAL (sem rotação).
-        # Usamos a derotation_matrix para mapear de volta.
+        # O CropDialog envia coordenadas baseadas na visualização ATUAL (com rotação e crop).
+        # set_cropbox exige coordenadas relativas à página ORIGINAL (MediaBox).
+        # Primeiro desfazemos a rotação e depois somamos o top-left do CropBox atual.
         rect_view = fitz.Rect(x0, y0, x1, y1)
-        rect_original = rect_view * page.derotation_matrix
+        rect_derotated = rect_view * page.derotation_matrix
+        
+        # O CropBox atual define a origem da visualização que foi usada no diálogo.
+        cb = page.cropbox
+        rect_original = fitz.Rect(
+            rect_derotated.x0 + cb.x0,
+            rect_derotated.y0 + cb.y0,
+            rect_derotated.x1 + cb.x0,
+            rect_derotated.y1 + cb.y0
+        )
         
         page.set_cropbox(rect_original)
 
@@ -252,7 +261,7 @@ class PDFEngine:
             
             try:
                 # 1. Salva em um arquivo temporário novo
-                self.doc.save(temp_path, garbage=4, deflate=True)
+                self.doc.save(temp_path, garbage=1, deflate=True)
                 
                 # Guardamos o caminho do documento atual antes de fechar (pode ser um .tmp anterior)
                 old_doc_path = self.doc.name
@@ -293,7 +302,7 @@ class PDFEngine:
                 raise e
         else:
             # Salvando em um novo local (Save As)
-            self.doc.save(save_path, garbage=4, deflate=True)
+            self.doc.save(save_path, garbage=1, deflate=True)
             self.file_path = save_path
 
     def save_as(self, path: str):
