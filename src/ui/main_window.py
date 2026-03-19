@@ -161,6 +161,7 @@ class MainWindow(QMainWindow):
         self._undo_stack: list[bytes] = []
         self._redo_stack: list[bytes] = []
         self._max_history = 30
+        self._thumbnail_cache: dict[int, bytes] = {}  # Cache de PNGs por índice
 
         # Última pasta visitada (persistência via QSettings)
         self._settings = QSettings("Ross", "RossPDFEditor")
@@ -697,6 +698,7 @@ class MainWindow(QMainWindow):
         self.is_dirty = False
         self._undo_stack.clear()
         self._redo_stack.clear()
+        self._thumbnail_cache.clear()
         
         if self.pages_layout:
             while self.pages_layout.count():
@@ -766,6 +768,7 @@ class MainWindow(QMainWindow):
             self.is_dirty = False
             self._undo_stack.clear()
             self._redo_stack.clear()
+            self._thumbnail_cache.clear()
             self._push_snapshot()  # Snapshot inicial
             self._rebuild_thumbnails()
             self.setWindowTitle(
@@ -947,6 +950,7 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self._push_snapshot()
             self.engine.delete_pages(list(self.selected_indices))
+            self._thumbnail_cache.clear() # Mudança de índices global
             self.selected_indices.clear()
             self.is_dirty = True
             self._rebuild_thumbnails()
@@ -973,6 +977,8 @@ class MainWindow(QMainWindow):
             if crop_rect:
                 self._push_snapshot()
                 self.engine.crop_page(idx, *crop_rect)
+                if idx in self._thumbnail_cache:
+                    del self._thumbnail_cache[idx] # Força re-render da página recortada
                 self.is_dirty = True
                 self._rebuild_thumbnails()
                 self.status.showMessage(
@@ -985,6 +991,9 @@ class MainWindow(QMainWindow):
             return
         self._push_snapshot()
         self.engine.rotate_pages(list(self.selected_indices), -90)
+        for idx in self.selected_indices:
+            if idx in self._thumbnail_cache:
+                del self._thumbnail_cache[idx]
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a esquerda.")
@@ -995,6 +1004,9 @@ class MainWindow(QMainWindow):
             return
         self._push_snapshot()
         self.engine.rotate_pages(list(self.selected_indices), 90)
+        for idx in self.selected_indices:
+            if idx in self._thumbnail_cache:
+                del self._thumbnail_cache[idx]
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a direita.")
@@ -1007,6 +1019,7 @@ class MainWindow(QMainWindow):
         """Reconstrói todas as miniaturas das páginas."""
         # Limpar layout existente
         self.thumbnails.clear()
+        # self._thumbnail_cache NÃO deve ser limpo aqui para podermos usar o cache
         self.selected_indices.clear()
 
         if self.pages_layout:
@@ -1026,7 +1039,13 @@ class MainWindow(QMainWindow):
         cols = max(1, (self.width() - 80) // 220)
 
         for i in range(self.engine.page_count):
-            png_data = self.engine.render_page(i, zoom=1.0)
+            # Tenta pegar do cache, senão renderiza
+            if i in self._thumbnail_cache:
+                png_data = self._thumbnail_cache[i]
+            else:
+                png_data = self.engine.render_page(i, zoom=1.0)
+                self._thumbnail_cache[i] = png_data
+            
             thumb = PageThumbnail(i, png_data)
             thumb.clicked.connect(self._on_page_clicked)
             thumb.delete_requested.connect(self._on_page_delete)
@@ -1082,6 +1101,9 @@ class MainWindow(QMainWindow):
 
         self._push_snapshot()
         self.engine.delete_page(index)
+        # Invalidar cache: Como removeu uma página, o índice de todas as sucessoras muda.
+        # Mais seguro limpar o cache todo aqui.
+        self._thumbnail_cache.clear()
         self.selected_indices.clear()
         self.is_dirty = True
         self._rebuild_thumbnails()
@@ -1094,6 +1116,8 @@ class MainWindow(QMainWindow):
         """Duplicar uma página específica (via botão + no thumbnail)."""
         self._push_snapshot()
         self.engine.duplicate_page(index)
+        # Invalidar cache: Similar à exclusão
+        self._thumbnail_cache.clear()
         self.selected_indices.clear()
         self.selected_indices.add(index + 1)  # Seleciona a nova cópia
         self.is_dirty = True
@@ -1110,6 +1134,13 @@ class MainWindow(QMainWindow):
 
         self._push_snapshot()
         self.engine.swap_pages(from_index, to_index)
+        # Trocar as entradas no cache para evitar re-renderizar
+        if from_index in self._thumbnail_cache and to_index in self._thumbnail_cache:
+            self._thumbnail_cache[from_index], self._thumbnail_cache[to_index] = \
+                self._thumbnail_cache[to_index], self._thumbnail_cache[from_index]
+        else:
+            self._thumbnail_cache.clear() # Fallback se algo estiver faltando
+
         self.selected_indices.clear()
         self.is_dirty = True
         self._rebuild_thumbnails()
@@ -1121,6 +1152,8 @@ class MainWindow(QMainWindow):
         """Gira uma página específica 90° para a esquerda (via thumbnail)."""
         self._push_snapshot()
         self.engine.rotate_page(index, -90)
+        if index in self._thumbnail_cache:
+            del self._thumbnail_cache[index] # Força re-render dessa página específica
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"Página {index + 1} girada para a esquerda.")
@@ -1129,6 +1162,8 @@ class MainWindow(QMainWindow):
         """Gira uma página específica 90° para a direita (via thumbnail)."""
         self._push_snapshot()
         self.engine.rotate_page(index, 90)
+        if index in self._thumbnail_cache:
+            del self._thumbnail_cache[index] # Força re-render dessa página específica
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"Página {index + 1} girada para a direita.")
@@ -1234,6 +1269,7 @@ class MainWindow(QMainWindow):
         self.engine.doc = fitz.open("pdf", snapshot)
         self.engine.file_path = file_path
         self.selected_indices.clear()
+        self._thumbnail_cache.clear()  # Invalida cache após undo/redo
         self._rebuild_thumbnails()
 
     # ══════════════════════════════════════════════════════════
