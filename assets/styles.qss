@@ -1,0 +1,252 @@
+/* ═══════════════════════════════════════════════════════════
+   Ross PDF Editor – Dark Premium Theme
+   Clean, moderno e sofisticado
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Base Global ─────────────────────────────────────────── */
+QMainWindow, QWidget {
+    background-color: #1a1b2e;
+    color: #e0e0e8;
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 13px;
+}
+
+/* ── Barra de Menu ───────────────────────────────────────── */
+QMenuBar {
+    background-color: #12132a;
+    color: #a0a0c0;
+    border-bottom: 1px solid #2a2b4a;
+    padding: 4px 8px;
+    font-size: 13px;
+}
+
+QMenuBar::item {
+    padding: 6px 14px;
+    border-radius: 6px;
+}
+
+QMenuBar::item:selected {
+    background-color: #2d2f5a;
+    color: #ffffff;
+}
+
+QMenu {
+    background-color: #1e1f3a;
+    border: 1px solid #3a3b6a;
+    border-radius: 8px;
+    padding: 6px;
+}
+
+QMenu::item {
+    padding: 8px 30px 8px 16px;
+    border-radius: 6px;
+}
+
+QMenu::item:selected {
+    background-color: #3d5afe;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #2a2b4a;
+    margin: 4px 10px;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────── */
+QToolBar {
+    background-color: #12132a;
+    border: none;
+    border-bottom: 1px solid #2a2b4a;
+    padding: 2px 8px;
+    spacing: 2px;
+}
+
+QToolButton {
+    background-color: transparent;
+    color: #b0b0d0;
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 14px;
+    font-weight: normal;
+}
+
+QToolButton:hover {
+    background-color: #2d2f5a;
+    color: #ffffff;
+}
+
+QToolButton:pressed {
+    background-color: #3d5afe;
+    color: #ffffff;
+}
+
+/* ── Scroll Area (Área de páginas) ───────────────────────── */
+QScrollArea {
+    background-color: #0f1024;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background-color: #14152e;
+    width: 10px;
+    border-radius: 5px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #3a3b6a;
+    border-radius: 5px;
+    min-height: 40px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #5a5baa;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    background-color: #14152e;
+    height: 10px;
+    border-radius: 5px;
+    margin: 2px;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #3a3b6a;
+    border-radius: 5px;
+    min-width: 40px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #5a5baa;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+
+/* ── Status Bar ──────────────────────────────────────────── */
+QStatusBar {
+    background-color: #12132a;
+    color: #7070a0;
+    border-top: 1px solid #2a2b4a;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+/* ── Labels ──────────────────────────────────────────────── */
+QLabel {
+    color: #e0e0e8;
+}
+
+/* ── Push Buttons ────────────────────────────────────────── */
+QPushButton {
+    background-color: #2d2f5a;
+    color: #e0e0e8;
+    border: 1px solid #3a3b6a;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+QPushButton:hover {
+    background-color: #3d5afe;
+    border-color: #5a7afe;
+    color: #ffffff;
+}
+
+QPushButton:pressed {
+    background-color: #2a3fc0;
+}
+
+QPushButton#btn_primary {
+    background-color: #3d5afe;
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton#btn_primary:hover {
+    background-color: #536dfe;
+}
+
+QPushButton#btn_danger {
+    background-color: #e53935;
+    border: none;
+    color: #ffffff;
+}
+
+QPushButton#btn_danger:hover {
+    background-color: #ef5350;
+}
+
+/* ── Dialogs / Frames ────────────────────────────────────── */
+QDialog {
+    background-color: #1a1b2e;
+    color: #e0e0e8;
+}
+
+QFrame#page_card {
+    background-color: #1e1f3a;
+    border: 2px solid #2a2b4a;
+    border-radius: 12px;
+}
+
+QFrame#page_card:hover {
+    border-color: #3d5afe;
+}
+
+QFrame#page_card[selected="true"] {
+    border-color: #3d5afe;
+    background-color: #242560;
+}
+
+/* ── DropZone ────────────────────────────────────────────── */
+QFrame#drop_zone {
+    background-color: #14152e;
+    border: 2px dashed #3a3b6a;
+    border-radius: 16px;
+}
+
+QFrame#drop_zone:hover {
+    border-color: #3d5afe;
+    background-color: #1a1b40;
+}
+
+/* ── SpinBox / Line Edit ─────────────────────────────────── */
+QSpinBox, QLineEdit {
+    background-color: #1e1f3a;
+    color: #e0e0e8;
+    border: 1px solid #3a3b6a;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+QSpinBox:focus, QLineEdit:focus {
+    border-color: #3d5afe;
+}
+
+/* ── Tooltip ─────────────────────────────────────────────── */
+QToolTip {
+    background-color: #2d2f5a;
+    color: #ffffff;
+    border: 1px solid #3a3b6a;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+/* ── Message Box ─────────────────────────────────────────── */
+QMessageBox {
+    background-color: #1a1b2e;
+}
+
+QMessageBox QLabel {
+    color: #e0e0e8;
+}

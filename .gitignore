@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+env/
+
+# Build e Dist
+build/
+dist/
+*.spec
+
+# IDEs
+.vscode/
+.idea/
+
+# PDF Editor Temporary Files
+*.tmp
+*.pdf.tmp
+
+# Binários e Instaladores (ARQUIVOS PESADOS - NUNCA ENVIAR PRO GIT)
+installer/
+installer_meta/
+*.zip
+*.exe
+*.msi
+*.msix
+*.appx
+*.7z
+*.rar
+RossPDFEditor.iss.tmp
