@@ -21,8 +21,14 @@ dist/
 *.tmp
 *.pdf.tmp
 
-# Installer metadata
-installer_meta/
-RossPDFEditor_setup.exe
-ross_pdf_editor_setup.exe
+# Binários e Instaladores (ARQUIVOS PESADOS - NUNCA ENVIAR PRO GIT)
 installer/
+installer_meta/
+*.zip
+*.exe
+*.msi
+*.msix
+*.appx
+*.7z
+*.rar
+RossPDFEditor.iss.tmp
