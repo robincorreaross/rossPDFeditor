@@ -1510,6 +1510,8 @@ class MainWindow(QMainWindow):
                 self.status.showMessage(f"Erro ao inserir: {e}")
 
         if self.engine.doc:
+            self._push_snapshot()
+            self._worker_generation += 1
             self.is_dirty = True
             self._rebuild_thumbnails()
             self.status.showMessage(
