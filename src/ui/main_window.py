@@ -46,7 +46,7 @@ class ThumbnailWorker(QObject):
     Trabalhador que renderiza as miniaturas em uma thread separada.
     Isso evita que a UI trave ao abrir PDFs grandes (>1MB / Scans).
     """
-    finished = Signal(int, QImage)
+    finished = Signal(int, QImage, int) # index, image, generation
 
     def __init__(self, pdf_path: str):
         super().__init__()
@@ -55,7 +55,7 @@ class ThumbnailWorker(QObject):
         self._pending_requests = []
         self._is_running = True
 
-    def render_page(self, index: int):
+    def render_page(self, index: int, generation: int):
         if not self._is_running: return
         
         import fitz
@@ -75,7 +75,7 @@ class ThumbnailWorker(QObject):
             img = QImage.fromData(pix.tobytes("png"))
             
             # Emite a QImage para a thread principal converter em Pixmap
-            self.finished.emit(index, img)
+            self.finished.emit(index, img, generation)
         except Exception:
             pass
 
@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         # Thread de renderização de thumbnails
         self._thumb_thread: Optional[threading.Thread] = None
         self._thumb_worker: Optional[ThumbnailWorker] = None
+        self._worker_generation = 0
         self._thread_pool = [] # Para gerenciar a thread do PySide
 
         # Última pasta visitada (persistência via QSettings)
@@ -1043,6 +1044,7 @@ class MainWindow(QMainWindow):
         self.engine.rotate_pages(list(self.selected_indices), -90)
         for idx in self.selected_indices:
             self._render_and_cache_sync(idx)
+        self._worker_generation += 1 # Descarta thumbnails obsoletos da thread
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a esquerda.")
@@ -1055,6 +1057,7 @@ class MainWindow(QMainWindow):
         self.engine.rotate_pages(list(self.selected_indices), 90)
         for idx in self.selected_indices:
             self._render_and_cache_sync(idx)
+        self._worker_generation += 1 # Descarta thumbnails obsoletos da thread
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a direita.")
@@ -1115,10 +1118,12 @@ class MainWindow(QMainWindow):
             else:
                 # Se temos um worker, pedimos a renderização em background
                 if self._thumb_worker:
-                    # Usamos um closure para capturar o índice correto
-                    def request_render(idx=i):
+                    # Incrementamos a geração em mudanças estruturais se necessário
+                    # Mas aqui apenas pedimos a tarefa com o generation atual
+                    gen = self._worker_generation
+                    def request_render(idx=i, g=gen):
                         if self._thumb_worker:
-                            self._thumb_worker.render_page(idx)
+                            self._thumb_worker.render_page(idx, g)
                     QTimer.singleShot(0, request_render)
             
             # Reposiciona se necessário para manter o grid denso
@@ -1177,6 +1182,7 @@ class MainWindow(QMainWindow):
         self._thumbnail_cache = new_cache
         
         self.selected_indices.clear()
+        self._worker_generation += 1 # Reindexação do cache invalida renders pendentes
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(
@@ -1205,6 +1211,7 @@ class MainWindow(QMainWindow):
         
         self.selected_indices.clear()
         self.selected_indices.add(index + 1)  # Seleciona a nova cópia
+        self._worker_generation += 1
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(
@@ -1227,6 +1234,7 @@ class MainWindow(QMainWindow):
             self._thumbnail_cache.clear() # Fallback se algo estiver faltando
 
         self.selected_indices.clear()
+        self._worker_generation += 1 # Invalida renders pendentes que leriam posições antigas do disco
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(
@@ -1237,8 +1245,8 @@ class MainWindow(QMainWindow):
         """Gira uma página específica 90° para a esquerda (via thumbnail)."""
         self._push_snapshot()
         self.engine.rotate_page(index, -90)
-        if index in self._thumbnail_cache:
-            del self._thumbnail_cache[index] # Força re-render dessa página específica
+        self._render_and_cache_sync(index) # Atualiza cache com a rotação
+        self._worker_generation += 1
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"Página {index + 1} girada para a esquerda.")
@@ -1247,8 +1255,8 @@ class MainWindow(QMainWindow):
         """Gira uma página específica 90° para a direita (via thumbnail)."""
         self._push_snapshot()
         self.engine.rotate_page(index, 90)
-        if index in self._thumbnail_cache:
-            del self._thumbnail_cache[index] # Força re-render dessa página específica
+        self._render_and_cache_sync(index) # Atualiza cache com a rotação
+        self._worker_generation += 1
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"Página {index + 1} girada para a direita.")
@@ -1393,8 +1401,11 @@ class MainWindow(QMainWindow):
                 thread.wait()
             self._thread_pool.clear()
 
-    def _on_thumbnail_rendered(self, index: int, image: QImage):
-        """Recebe a imagem da thread e atualiza a UI."""
+    def _on_thumbnail_rendered(self, index: int, image: QImage, generation: int):
+        """Recebe a imagem da thread e atualiza a UI se a geração for atual."""
+        if generation != self._worker_generation:
+            return # Descarta resultado obsoleto (pré-edição)
+            
         # Conversão de QImage para QPixmap DEVE ser na Main Thread
         pixmap = QPixmap.fromImage(image).scaled(
             192, 272,
