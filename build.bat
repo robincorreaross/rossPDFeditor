@@ -32,7 +32,7 @@ echo [+] Versao detectada: v%APP_VERSION%
 echo.
 
 echo [1/2] Compilando o aplicativo com PyInstaller...
-python -m PyInstaller --clean --noconfirm ross_pdf_editor.spec
+python -m PyInstaller --clean --noconfirm rossPDFeditor.spec
 if errorlevel 1 (
     echo ERRO: falha ao gerar o aplicativo.
     pause & exit /b 1
