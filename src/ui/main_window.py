@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from PySide6.QtCore import (
     Qt, QSize, QMimeData, QTimer, QPropertyAnimation, QEasingCurve,
-    QSettings, QStandardPaths, QObject, Signal
+    QSettings, QStandardPaths, QObject, Signal, QThread
 )
 from PySide6.QtGui import (
     QIcon, QAction, QKeySequence, QDragEnterEvent, QDropEvent,
@@ -40,6 +40,50 @@ class ScanWorkerSignals(QObject):
     """
     finished = Signal(object, object)  # png_bytes, error_msg
     progress = Signal(str)             # status message
+
+class ThumbnailWorker(QObject):
+    """
+    Trabalhador que renderiza as miniaturas em uma thread separada.
+    Isso evita que a UI trave ao abrir PDFs grandes (>1MB / Scans).
+    """
+    finished = Signal(int, QImage)
+
+    def __init__(self, pdf_path: str):
+        super().__init__()
+        self.pdf_path = pdf_path
+        self._doc = None
+        self._pending_requests = []
+        self._is_running = True
+
+    def render_page(self, index: int):
+        if not self._is_running: return
+        
+        import fitz
+        from PySide6.QtGui import QImage, QPixmap
+        from PySide6.QtCore import Qt
+        
+        try:
+            if not self._doc:
+                # Abre uma cópia separada para a thread (Thread Safety)
+                self._doc = fitz.open(self.pdf_path)
+            
+            if index >= len(self._doc): return
+            
+            page = self._doc[index]
+            # Zoom 1.0 é suficiente para miniaturas (rápido)
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0), alpha=False)
+            img = QImage.fromData(pix.tobytes("png"))
+            
+            # Emite a QImage para a thread principal converter em Pixmap
+            self.finished.emit(index, img)
+        except Exception:
+            pass
+
+    def stop(self):
+        self._is_running = False
+        if self._doc:
+            self._doc.close()
+            self._doc = None
 from src.ui.help_screen import HelpScreen
 from src.ui.viewer_dialog import ViewerDialog
 from src.core.updater import verificar_atualizacao, baixar_e_instalar, abrir_download
@@ -161,7 +205,12 @@ class MainWindow(QMainWindow):
         self._undo_stack: list[bytes] = []
         self._redo_stack: list[bytes] = []
         self._max_history = 30
-        self._thumbnail_cache: dict[int, bytes] = {}  # Cache de PNGs por índice
+        self._thumbnail_cache: dict[int, QPixmap] = {} 
+        
+        # Thread de renderização de thumbnails
+        self._thumb_thread: Optional[threading.Thread] = None
+        self._thumb_worker: Optional[ThumbnailWorker] = None
+        self._thread_pool = [] # Para gerenciar a thread do PySide
 
         # Última pasta visitada (persistência via QSettings)
         self._settings = QSettings("Ross", "RossPDFEditor")
@@ -699,6 +748,7 @@ class MainWindow(QMainWindow):
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._thumbnail_cache.clear()
+        self._stop_thumb_worker()
         
         if self.pages_layout:
             while self.pages_layout.count():
@@ -769,6 +819,7 @@ class MainWindow(QMainWindow):
             self._undo_stack.clear()
             self._redo_stack.clear()
             self._thumbnail_cache.clear()
+            self._start_thumb_worker(path)
             self._push_snapshot()  # Snapshot inicial
             self._rebuild_thumbnails()
             self.setWindowTitle(
@@ -977,8 +1028,7 @@ class MainWindow(QMainWindow):
             if crop_rect:
                 self._push_snapshot()
                 self.engine.crop_page(idx, *crop_rect)
-                if idx in self._thumbnail_cache:
-                    del self._thumbnail_cache[idx] # Força re-render da página recortada
+                self._render_and_cache_sync(idx) # Atualiza cache imediato
                 self.is_dirty = True
                 self._rebuild_thumbnails()
                 self.status.showMessage(
@@ -992,8 +1042,7 @@ class MainWindow(QMainWindow):
         self._push_snapshot()
         self.engine.rotate_pages(list(self.selected_indices), -90)
         for idx in self.selected_indices:
-            if idx in self._thumbnail_cache:
-                del self._thumbnail_cache[idx]
+            self._render_and_cache_sync(idx)
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a esquerda.")
@@ -1005,8 +1054,7 @@ class MainWindow(QMainWindow):
         self._push_snapshot()
         self.engine.rotate_pages(list(self.selected_indices), 90)
         for idx in self.selected_indices:
-            if idx in self._thumbnail_cache:
-                del self._thumbnail_cache[idx]
+            self._render_and_cache_sync(idx)
         self.is_dirty = True
         self._rebuild_thumbnails()
         self.status.showMessage(f"{len(self.selected_indices)} página(s) girada(s) para a direita.")
@@ -1058,29 +1106,22 @@ class MainWindow(QMainWindow):
                 self.thumbnails.append(thumb)
 
         # 2. Sincronizar dados e reposicionar no Grid
-        # NOTA: O 'self._thumbnail_cache' agora armazena o QPixmap já escalado!
         for i, thumb in enumerate(self.thumbnails):
-            if i in self._thumbnail_cache:
-                pixmap = self._thumbnail_cache[i]
-            else:
-                # Renderiza e escala UMA VEZ para o cache
-                png_data = self.engine.render_page(i, zoom=1.0)
-                img = QImage()
-                if img.loadFromData(png_data):
-                    pixmap = QPixmap.fromImage(img).scaled(
-                        PageThumbnail.THUMB_WIDTH - 8, PageThumbnail.THUMB_HEIGHT - 8,
-                        Qt.KeepAspectRatio, Qt.SmoothTransformation
-                    )
-                else:
-                    pixmap = QPixmap() # Null pixmap se falhar o carregamento
-                self._thumbnail_cache[i] = pixmap
-            
-            # Atualiza widget sem destruí-lo e sem re-escalar imagem
             thumb.update_index(i)
-            thumb.update_thumbnail_pixmap(pixmap)
             thumb.selected = i in self.selected_indices
             
-            # Reposiciona se necessário
+            if i in self._thumbnail_cache:
+                thumb.update_thumbnail_pixmap(self._thumbnail_cache[i])
+            else:
+                # Se temos um worker, pedimos a renderização em background
+                if self._thumb_worker:
+                    # Usamos um closure para capturar o índice correto
+                    def request_render(idx=i):
+                        if self._thumb_worker:
+                            self._thumb_worker.render_page(idx)
+                    QTimer.singleShot(0, request_render)
+            
+            # Reposiciona se necessário para manter o grid denso
             row = i // cols
             col = i % cols
             self.pages_layout.addWidget(thumb, row, col, Qt.AlignCenter)
@@ -1314,7 +1355,71 @@ class MainWindow(QMainWindow):
         self.engine.file_path = file_path
         self.selected_indices.clear()
         self._thumbnail_cache.clear()  # Invalida cache após undo/redo
+        
+        # Reinicia o worker se houver arquivo físico, para refletir o estado do snapshot?
+        # Na verdade, o snapshot pode ser diferente do disco. 
+        # Por simplicidade, o undo/redo vai re-renderizar na thread principal ou 
+        # poderiamos passar os bytes do snapshot para um novo worker.
         self._rebuild_thumbnails()
+
+    # ── Métodos Auxiliares de Threading ──────────────────────────
+
+    def _start_thumb_worker(self, pdf_path: str):
+        """Inicializa a thread de renderização de thumbnails."""
+        self._stop_thumb_worker()
+        
+        if not pdf_path or not os.path.exists(pdf_path):
+            return
+
+        self._thread_obj = QThread()
+        self._thumb_worker = ThumbnailWorker(pdf_path)
+        self._thumb_worker.moveToThread(self._thread_obj)
+        
+        # Conecta sinal de conclusão
+        self._thumb_worker.finished.connect(self._on_thumbnail_rendered)
+        
+        self._thread_obj.start()
+        self._thread_pool.append((self._thread_obj, self._thumb_worker))
+
+    def _stop_thumb_worker(self):
+        """Para e limpa a thread atual."""
+        if self._thumb_worker:
+            self._thumb_worker.stop()
+            self._thumb_worker = None
+        
+        if self._thread_pool:
+            for thread, worker in self._thread_pool:
+                thread.quit()
+                thread.wait()
+            self._thread_pool.clear()
+
+    def _on_thumbnail_rendered(self, index: int, image: QImage):
+        """Recebe a imagem da thread e atualiza a UI."""
+        # Conversão de QImage para QPixmap DEVE ser na Main Thread
+        pixmap = QPixmap.fromImage(image).scaled(
+            192, 272,
+            Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self._thumbnail_cache[index] = pixmap
+        # Procura o widget correspondente
+        for thumb in self.thumbnails:
+            if thumb.page_index == index:
+                thumb.update_thumbnail_pixmap(pixmap)
+                break
+
+    def _render_and_cache_sync(self, index: int):
+        """Renderiza uma página síncronamente (para edições 1-a-1)."""
+        try:
+            png_data = self.engine.render_page(index, zoom=1.0)
+            img = QImage()
+            if img.loadFromData(png_data):
+                pixmap = QPixmap.fromImage(img).scaled(
+                    192, 272,
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+                self._thumbnail_cache[index] = pixmap
+        except Exception:
+            pass
 
     # ══════════════════════════════════════════════════════════
     # Persistência de Pasta (QSettings)

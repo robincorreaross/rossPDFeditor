@@ -249,60 +249,42 @@ class PDFEngine:
             raise ValueError("Nenhum caminho de salvamento definido.")
 
         # Se for salvar no mesmo arquivo que está aberto, precisamos
-        # de uma estratégia de arquivo temporário para evitar o erro
-        # "save to original must be incremental".
+        # de uma estratégia de arquivo temporário.
         is_overwrite = (path is None or (self.file_path and 
                         os.path.abspath(path) == os.path.abspath(self.file_path)))
 
+        # Priorizar VELOCIDADE: garbage=3 e deflate=False.
+        # Deflate=True recompacta todos os streams, o que é lento em PDFs com scans.
+        garbage_level = 3 # Limpeza de objetos não referenciados
+        use_deflate = False # Evita re-compressão lenta
+
         if is_overwrite and self.file_path:
-            # Gerar um nome temporário único para evitar conflitos (ex: retentativas após falha)
             target_path = os.path.abspath(save_path)
             temp_path = target_path + f".{uuid.uuid4().hex[:8]}.tmp"
             
             try:
-                # 1. Salva em um arquivo temporário novo
-                self.doc.save(temp_path, garbage=1, deflate=True)
-                
-                # Guardamos o caminho do documento atual antes de fechar (pode ser um .tmp anterior)
+                self.doc.save(temp_path, garbage=garbage_level, deflate=use_deflate)
                 old_doc_path = self.doc.name
-                
-                # 2. Fecha o documento atual para liberar os arquivos
                 self.doc.close()
                 
-                # 3. Tenta substituir o original pelo novo temporário
                 try:
                     if os.path.exists(target_path):
                         os.remove(target_path)
                     os.rename(temp_path, target_path)
-                    
-                    # 4. Sucesso! Reabre no local correto
                     self.doc = fitz.open(target_path)
                     self.file_path = target_path
-                    
-                    # 5. Limpeza: Se estávamos em um fallback (.tmp), remove o arquivo antigo
                     if ".tmp" in old_doc_path and os.path.exists(old_doc_path):
-                        try:
-                            os.remove(old_doc_path)
+                        try: os.remove(old_doc_path)
                         except: pass
-                        
                 except Exception as rename_err:
-                    # Se falhar o rename (arquivo ainda bloqueado), voltamos para o NOVO temp
                     self.doc = fitz.open(temp_path)
-                    raise OSError(
-                        f"O arquivo original ainda está sendo usado por outro programa.\n"
-                        f"Suas alterações atuais foram salvas em:\n{temp_path}\n\n"
-                        f"Feche o outro programa e tente salvar novamente no botão 'Salvar'."
-                    ) from rename_err
-                    
+                    raise OSError(f"Arquivo bloqueado. Salvo em: {temp_path}") from rename_err
             except Exception as e:
-                # Erro na gravação do próprio temp ou erro inesperado
                 if "must be incremental" in str(e):
-                    # Fallback extremo caso o PyMuPDF se perca
-                    raise OSError("Erro interno de salvamento. Tente fechar e abrir o arquivo novamente ou use 'Salvar Como'.")
+                    raise OSError("Erro interno. Tente 'Salvar Como'.")
                 raise e
         else:
-            # Salvando em um novo local (Save As)
-            self.doc.save(save_path, garbage=1, deflate=True)
+            self.doc.save(save_path, garbage=garbage_level, deflate=use_deflate)
             self.file_path = save_path
 
     def save_as(self, path: str):

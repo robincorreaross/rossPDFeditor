@@ -1,13 +1,14 @@
 {
-  "version": "1.8.1",
-  "release_date": "2026-03-20",
+  "version": "1.8.2",
+  "release_date": "2026-03-21",
   "download_zip_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest/download/RossPDFEditor.zip",
   "download_url": "https://github.com/robincorreaross/rossPDFeditor/releases/latest",
   "changelog": [
-    "Otimização massiva de performance no carregamento de miniaturas",
-    "Correção do travamento de 5% no download da atualização",
-    "Melhoria na estabilidade da UI e caching inteligente",
-    "Limpeza de logs de erro do sistema"
+    "Otimização RAM: Miniaturas em background (Assíncrona)",
+    "Otimização I/O: Salvamento instantâneo de PDFs com imagens",
+    "Melhoria na fluidez da UI ao abrir arquivos >4MB",
+    "Correção de travamentos no auto-update",
+    "Correção do erro Pixmap::scaled nulo"
   ],
   "mandatory": true
 }
