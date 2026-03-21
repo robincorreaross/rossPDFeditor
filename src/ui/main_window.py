@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from PySide6.QtCore import (
     Qt, QSize, QMimeData, QTimer, QPropertyAnimation, QEasingCurve,
-    QSettings, QStandardPaths, QObject, Signal, QThread
+    QSettings, QStandardPaths, QObject, Signal, QThread, Slot
 )
 from PySide6.QtGui import (
     QIcon, QAction, QKeySequence, QDragEnterEvent, QDropEvent,
@@ -48,13 +48,22 @@ class ThumbnailWorker(QObject):
     """
     finished = Signal(int, QImage, int) # index, image, generation
 
-    def __init__(self, pdf_path: str):
+    def __init__(self, pdf_bytes: bytes):
         super().__init__()
-        self.pdf_path = pdf_path
+        self.pdf_bytes = pdf_bytes
         self._doc = None
         self._pending_requests = []
         self._is_running = True
 
+    @Slot(bytes)
+    def update_document(self, pdf_bytes: bytes):
+        """Atualiza o documento em memória para a thread."""
+        self.pdf_bytes = pdf_bytes
+        if self._doc:
+            self._doc.close()
+            self._doc = None
+
+    @Slot(int, int)
     def render_page(self, index: int, generation: int):
         if not self._is_running: return
         
@@ -64,18 +73,19 @@ class ThumbnailWorker(QObject):
         
         try:
             if not self._doc:
-                # Abre uma cópia separada para a thread (Thread Safety)
-                self._doc = fitz.open(self.pdf_path)
+                # Abre cópia baseada nos bytes sincronizados
+                self._doc = fitz.open("pdf", self.pdf_bytes)
             
             if index >= len(self._doc): return
             
             page = self._doc[index]
             # Zoom 1.0 é suficiente para miniaturas (rápido)
             pix = page.get_pixmap(matrix=fitz.Matrix(1.0, 1.0), alpha=False)
-            img = QImage.fromData(pix.tobytes("png"))
+            fmt = QImage.Format_RGBA8888 if pix.alpha else QImage.Format_RGB888
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, fmt)
             
-            # Emite a QImage para a thread principal converter em Pixmap
-            self.finished.emit(index, img, generation)
+            # Copia img para evitar segfault por causa do garbage collection no fitz.Pixmap
+            self.finished.emit(index, img.copy(), generation)
         except Exception:
             pass
 
@@ -178,6 +188,8 @@ class FlowLayout(QVBoxLayout):
 
 class MainWindow(QMainWindow):
     """Janela principal do Ross PDF Editor."""
+    request_thumb_render = Signal(int, int)
+    document_updated_signal = Signal(bytes)
 
     APP_TITLE = "Ross PDF Editor"
     SUPPORTED_PDF = "Arquivos PDF (*.pdf)"
@@ -820,8 +832,8 @@ class MainWindow(QMainWindow):
             self._undo_stack.clear()
             self._redo_stack.clear()
             self._thumbnail_cache.clear()
-            self._start_thumb_worker(path)
-            self._push_snapshot()  # Snapshot inicial
+            self._start_thumb_worker()
+            # Snapshot inicial desnecessário, o 1º push do undo virá antes da 1º alteração
             self._rebuild_thumbnails()
             self.setWindowTitle(
                 f"{self.APP_TITLE} — {Path(path).name}"
@@ -1020,10 +1032,10 @@ class MainWindow(QMainWindow):
             return
 
         idx = list(self.selected_indices)[0]
-        png_data = self.engine.render_page(idx, zoom=2.0)
+        pixmap = self.engine.get_page_pixmap(idx, zoom=2.0)
         page_size = self.engine.get_page_size(idx)
 
-        dialog = CropDialog(png_data, page_size, self)
+        dialog = CropDialog(pixmap, page_size, self)
         if dialog.exec() == CropDialog.Accepted:
             crop_rect = dialog.get_crop_rect()
             if crop_rect:
@@ -1066,10 +1078,29 @@ class MainWindow(QMainWindow):
     # Thumbnails
     # ══════════════════════════════════════════════════════════
 
+    def _sync_worker(self):
+        """Sincroniza o worker de background com os bytes atuais em memória do PDF."""
+        # Se não houver documento, worker ou edição pendente (is_dirty=False), ignora a cópia
+        if not self._thumb_worker or not self.engine.doc or not self.is_dirty:
+            return
+            
+        # Garante que só gasta CPU copiando bytes se a geração tiver avançado
+        if self._worker_generation <= getattr(self, '_synced_generation', -1):
+            return
+
+        try:
+            pdf_bytes = self.engine.doc.tobytes(garbage=0, deflate=False)
+            self.document_updated_signal.emit(pdf_bytes)
+            self._synced_generation = self._worker_generation
+        except Exception:
+            pass
+
     def _rebuild_thumbnails(self):
         """Reconstrói a grade de miniaturas otimizando a criação de widgets (Fast-UI)."""
         if not self.engine.doc:
             return
+            
+        self._sync_worker()
 
         target_count = self.engine.page_count
         current_widgets_count = len(self.thumbnails)
@@ -1118,13 +1149,7 @@ class MainWindow(QMainWindow):
             else:
                 # Se temos um worker, pedimos a renderização em background
                 if self._thumb_worker:
-                    # Incrementamos a geração em mudanças estruturais se necessário
-                    # Mas aqui apenas pedimos a tarefa com o generation atual
-                    gen = self._worker_generation
-                    def request_render(idx=i, g=gen):
-                        if self._thumb_worker:
-                            self._thumb_worker.render_page(idx, g)
-                    QTimer.singleShot(0, request_render)
+                    self.request_thumb_render.emit(i, self._worker_generation)
             
             # Reposiciona se necessário para manter o grid denso
             row = i // cols
@@ -1335,7 +1360,6 @@ class MainWindow(QMainWindow):
         # Restaurar snapshot anterior
         snapshot = self._undo_stack.pop()
         self._restore_from_snapshot(snapshot)
-        self.is_dirty = True
         self.status.showMessage("Ação desfeita (Ctrl+Z)")
 
     def _action_redo(self):
@@ -1351,7 +1375,6 @@ class MainWindow(QMainWindow):
         # Restaurar snapshot do redo
         snapshot = self._redo_stack.pop()
         self._restore_from_snapshot(snapshot)
-        self.is_dirty = True
         self.status.showMessage("Ação refeita (Ctrl+Y)")
 
     def _restore_from_snapshot(self, snapshot: bytes):
@@ -1364,27 +1387,32 @@ class MainWindow(QMainWindow):
         self.selected_indices.clear()
         self._thumbnail_cache.clear()  # Invalida cache após undo/redo
         
-        # Reinicia o worker se houver arquivo físico, para refletir o estado do snapshot?
-        # Na verdade, o snapshot pode ser diferente do disco. 
-        # Por simplicidade, o undo/redo vai re-renderizar na thread principal ou 
-        # poderiamos passar os bytes do snapshot para um novo worker.
+        self.is_dirty = True
+        self._worker_generation += 1 # Invalida thumbnails pendentes e força nova sincronização do worker
         self._rebuild_thumbnails()
 
     # ── Métodos Auxiliares de Threading ──────────────────────────
 
-    def _start_thumb_worker(self, pdf_path: str):
+    def _start_thumb_worker(self):
         """Inicializa a thread de renderização de thumbnails."""
         self._stop_thumb_worker()
         
-        if not pdf_path or not os.path.exists(pdf_path):
+        if not self.engine.doc:
+            return
+            
+        try:
+            pdf_bytes = self.engine.doc.tobytes(garbage=0, deflate=False)
+        except Exception:
             return
 
         self._thread_obj = QThread()
-        self._thumb_worker = ThumbnailWorker(pdf_path)
+        self._thumb_worker = ThumbnailWorker(pdf_bytes)
         self._thumb_worker.moveToThread(self._thread_obj)
         
-        # Conecta sinal de conclusão
+        # Conecta sinal de conclusão e requisição
         self._thumb_worker.finished.connect(self._on_thumbnail_rendered)
+        self.request_thumb_render.connect(self._thumb_worker.render_page)
+        self.document_updated_signal.connect(self._thumb_worker.update_document)
         
         self._thread_obj.start()
         self._thread_pool.append((self._thread_obj, self._thumb_worker))
@@ -1421,14 +1449,12 @@ class MainWindow(QMainWindow):
     def _render_and_cache_sync(self, index: int):
         """Renderiza uma página síncronamente (para edições 1-a-1)."""
         try:
-            png_data = self.engine.render_page(index, zoom=1.0)
-            img = QImage()
-            if img.loadFromData(png_data):
-                pixmap = QPixmap.fromImage(img).scaled(
-                    192, 272,
-                    Qt.KeepAspectRatio, Qt.SmoothTransformation
-                )
-                self._thumbnail_cache[index] = pixmap
+            pixmap = self.engine.get_page_pixmap(index, zoom=1.0)
+            scaled = pixmap.scaled(
+                192, 272,
+                Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self._thumbnail_cache[index] = scaled
         except Exception:
             pass
 
@@ -1505,6 +1531,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         # Se for atualização automática, fechar direto
         if self._is_updating:
+            self._stop_thumb_worker()
             self.engine.close()
             event.accept()
             return
@@ -1525,6 +1552,7 @@ class MainWindow(QMainWindow):
         msg.setIcon(QMessageBox.Question)
         
         if msg.exec() == QMessageBox.Yes:
+            self._stop_thumb_worker()
             self.engine.close()
             event.accept()
         else:

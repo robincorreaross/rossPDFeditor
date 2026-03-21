@@ -137,7 +137,7 @@ class CropDialog(QDialog):
     selecionar a região de crop.
     """
 
-    def __init__(self, png_data: bytes, page_size: tuple, parent=None):
+    def __init__(self, pixmap: QPixmap, page_size: tuple, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Recortar Página")
         self.setMinimumSize(700, 550)
@@ -156,11 +156,6 @@ class CropDialog(QDialog):
             "color: #8080b0; font-size: 13px; padding: 8px;"
         )
         layout.addWidget(hint)
-
-        # Imagem com overlay
-        img = QImage()
-        img.loadFromData(png_data)
-        pixmap = QPixmap.fromImage(img)
 
         # Escalar para caber na janela
         display_w = min(660, pixmap.width())

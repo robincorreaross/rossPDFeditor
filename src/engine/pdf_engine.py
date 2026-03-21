@@ -64,14 +64,19 @@ class PDFEngine:
     def get_page_pixmap(self, page_index: int, zoom: float = 1.0):
         """
         Retorna a página renderizada diretamente como um objeto QPixmap do PySide6.
-        Ideal para visualização em alta resolução.
+        Ideal para visualização em alta resolução. Otimizado sem compressão PNG.
         """
-        from PySide6.QtGui import QImage, QPixmap
-        png_bytes = self.render_page(page_index, zoom)
+        if self.doc is None:
+            raise ValueError("Nenhum documento aberto.")
+            
+        page = self.doc[page_index]
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
         
-        image = QImage()
-        image.loadFromData(png_bytes)
-        return QPixmap.fromImage(image)
+        from PySide6.QtGui import QImage, QPixmap
+        fmt = QImage.Format_RGBA8888 if pix.alpha else QImage.Format_RGB888
+        img = QImage(pix.samples, pix.width, pix.height, pix.stride, fmt)
+        return QPixmap.fromImage(img.copy())
 
     def get_page_size(self, page_index: int) -> tuple:
         """Retorna (width, height) da página em pontos."""
